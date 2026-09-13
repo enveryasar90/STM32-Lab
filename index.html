@@ -1,0 +1,2431 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>STM32 Mobil FabLab & Robotik Laboratuvarı</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#38bdf8',
+              500: '#0284c7',
+              600: '#0369a1',
+              glow: '#38bdf8'
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Mobile-first touch enhancements & scroll lock prevention */
+    * {
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+    
+    body {
+      touch-action: pan-y pinch-zoom;
+      overflow-x: hidden;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      padding-bottom: env(safe-area-inset-bottom, 20px);
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #080c15; }
+    ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
+
+    .grid-bg {
+      background-size: 20px 20px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    }
+
+    /* Touch-friendly Pin Sockets: Generous 44px Tap Hitbox */
+    .pin-hitbox {
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .pin-socket {
+      width: 22px;
+      height: 22px;
+      border-radius: 9999px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.2s ease;
+    }
+    .pin-socket:active, .pin-socket.selected-source {
+      transform: scale(1.4);
+      box-shadow: 0 0 16px #38bdf8;
+      background-color: #f59e0b !important;
+      border-color: #fbbf24 !important;
+    }
+    .pin-socket.connected {
+      background-color: #10b981 !important;
+      border-color: #34d399 !important;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+    }
+
+    /* Block puzzle nodes */
+    .block-card {
+      touch-action: pan-y;
+      user-select: none;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    /* Responsive Wire Canvas */
+    #wiring-svg {
+      pointer-events: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 25;
+    }
+    #wiring-svg path {
+      pointer-events: stroke;
+      stroke-linecap: round;
+      cursor: pointer;
+    }
+
+    /* Canvas styling */
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    /* Safe bottom bar spacing on mobile phones */
+    .pb-safe {
+      padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 16px));
+    }
+  </style>
+</head>
+
+<body class="bg-[#070b14] text-slate-200 font-sans flex flex-col selection:bg-cyan-500 selection:text-black">
+
+  <header class="border-b border-slate-800 bg-[#0c1220]/95 backdrop-blur-md sticky top-0 z-40 px-3 py-2.5">
+    <div class="max-w-6xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-cyan-500 to-blue-600 flex items-center justify-center font-black font-mono text-base text-black shadow-md shadow-cyan-500/20">
+          µC
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-xs sm:text-sm font-bold text-white tracking-tight">STM32 Lab</h1>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono">F401RE</span>
+          </div>
+          <p class="text-[10px] text-slate-400 leading-none">Kumdan Silikona & Endüstriyel Robota</p>
+        </div>
+      </div>
+
+      <!-- Quick status & audio control -->
+      <div class="flex items-center gap-2">
+        <div id="header-badge" class="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] font-mono text-emerald-400 font-medium truncate max-w-[120px] sm:max-w-none">
+          1. Çip Üretimi
+        </div>
+        <button id="btn-audio-toggle" class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs active:scale-95 transition" aria-label="Sesi Aç/Kapat">
+          🔊
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-grow max-w-6xl mx-auto w-full p-2.5 sm:p-5 space-y-4 pb-safe">
+
+    <!-- ================================================================= -->
+    <!-- SECTION 1: MOBILE CHIP MANUFACTURING SIMULATOR -->
+    <!-- ================================================================= -->
+    <section id="tab-sec-chip" class="space-y-3 block">
+      
+      <!-- Horizontal Scrollable Step Bar for Phones -->
+      <div class="overflow-x-auto pb-1 -mx-2.5 px-2.5 flex gap-1.5 no-scrollbar" id="chip-steps-container">
+        <!-- Injected via JS -->
+      </div>
+
+      <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3.5 sm:p-5 shadow-xl relative overflow-hidden">
+        
+        <!-- Step Info Header -->
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5 mb-3">
+          <div>
+            <span id="chip-step-badge" class="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold">Aşama 1/6</span>
+            <h2 id="chip-step-title" class="text-sm sm:text-base font-bold text-white">Kumdan Kristal Külçeye (Czochralski)</h2>
+          </div>
+          <span id="chip-step-status" class="px-2 py-0.5 rounded bg-slate-900 text-[10px] font-mono text-cyan-300 border border-slate-700">
+            Beklemede
+          </span>
+        </div>
+
+        <!-- High-DPI Auto-Resizing Canvas Viewport -->
+        <div class="relative bg-[#060912] rounded-xl border border-slate-800/90 overflow-hidden min-h-[260px] sm:min-h-[340px] flex items-center justify-center grid-bg">
+          <canvas id="chipCanvas" class="w-full h-auto max-w-full block"></canvas>
+          
+          <div class="absolute bottom-2 left-2 right-2 flex justify-between items-center text-[10px] font-mono text-slate-400 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded border border-slate-800 pointer-events-none">
+            <span id="chip-canvas-hint" class="truncate">Tohum kristali yukarı çekin</span>
+            <span class="text-cyan-400 hidden sm:inline">28nm Litho</span>
+          </div>
+        </div>
+
+        <!-- Touch Controls for Chip Production -->
+        <div class="mt-3.5 p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
+          <div id="chip-dynamic-controls" class="space-y-2.5 text-xs font-mono">
+            <!-- Populated per active step -->
+          </div>
+
+          <!-- Step navigation buttons -->
+          <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+            <button id="chip-btn-prev" class="px-3 py-2 text-xs font-mono text-slate-400 bg-slate-800 rounded-lg active:scale-95 transition disabled:opacity-30">
+              ← Geri
+            </button>
+            <button id="chip-btn-next" class="px-4 py-2 text-xs font-mono font-bold text-black bg-cyan-400 hover:bg-cyan-300 rounded-lg active:scale-95 transition shadow-md shadow-cyan-500/20">
+              Sonraki Aşama →
+            </button>
+          </div>
+        </div>
+
+        <!-- Technical Accordion for Mobile -->
+        <div class="mt-3 border border-slate-800/80 rounded-xl overflow-hidden bg-slate-950/50">
+          <button id="btn-toggle-chip-info" class="w-full p-2.5 text-left text-xs font-bold text-slate-300 flex justify-between items-center">
+            <span class="flex items-center gap-1.5"><span>🔬</span> Mühendislik & Kimyasal Proses Detayı</span>
+            <span id="chip-info-arrow" class="text-slate-500 font-mono text-xs transition-transform">▼</span>
+          </button>
+          <div id="chip-info-body" class="hidden p-3 pt-0 text-[11px] text-slate-400 leading-relaxed border-t border-slate-900 space-y-2 font-sans">
+            <!-- Injected per step -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 2: MOBILE HARDWARE & TOUCH WIRING LAB -->
+    <!-- ================================================================= -->
+    <section id="tab-sec-wiring" class="space-y-3 hidden">
+      <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3.5 sm:p-5 shadow-xl relative">
+        
+        <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800/80 pb-2.5 mb-3">
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
+              <span>🔌</span> Donanım & Dokunmatik Kablolama
+            </h2>
+            <p class="text-[11px] text-slate-400">Ürettiğimiz STM32 pinlerini robot eklemlerine bağlayın.</p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="btn-auto-wire" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] font-mono font-bold rounded-lg border border-cyan-500/30 active:scale-95 transition">
+              ⚡ Otomatik Bağla
+            </button>
+            <button id="btn-clear-wire" class="px-2.5 py-1.5 bg-slate-800 text-rose-400 text-[11px] font-mono rounded-lg border border-slate-700 active:scale-95 transition">
+              Temizle
+            </button>
+          </div>
+        </div>
+
+        <!-- Interactive Touch Workbench -->
+        <div class="relative bg-[#070b14] rounded-xl border border-slate-800/90 p-3 sm:p-4 grid-bg overflow-hidden select-none" id="mobile-wiring-bench">
+          <svg id="wiring-svg"></svg>
+
+          <!-- Responsive Stacking: STM32 on top/left, Robot modules below/right -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+            
+            <!-- MCU Pin Block -->
+            <div class="bg-[#061c14] border-2 border-emerald-600/70 rounded-xl p-3 shadow-lg">
+              <div class="flex items-center justify-between border-b border-emerald-800/60 pb-1.5 mb-2">
+                <span class="text-[10px] font-mono text-emerald-400 font-bold uppercase">STM32 Nucleo Çıkışları</span>
+                <span class="text-[9px] font-mono text-emerald-500/80">Carrier Board</span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+                <!-- PA0 Pin -->
+                <div class="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <div>
+                    <span class="text-cyan-400 font-bold text-[11px]">PA0</span>
+                    <span class="text-[9px] text-slate-400 block -mt-1">TIM2_CH1</span>
+                  </div>
+                  <div class="pin-hitbox" data-pin="PA0" data-type="mcu">
+                    <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="PA0" data-type="mcu"></div>
+                  </div>
+                </div>
+
+                <!-- PA1 Pin -->
+                <div class="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <div>
+                    <span class="text-cyan-400 font-bold text-[11px]">PA1</span>
+                    <span class="text-[9px] text-slate-400 block -mt-1">TIM2_CH2</span>
+                  </div>
+                  <div class="pin-hitbox" data-pin="PA1" data-type="mcu">
+                    <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="PA1" data-type="mcu"></div>
+                  </div>
+                </div>
+
+                <!-- PA2 Pin -->
+                <div class="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <div>
+                    <span class="text-cyan-400 font-bold text-[11px]">PA2</span>
+                    <span class="text-[9px] text-slate-400 block -mt-1">TIM2_CH3</span>
+                  </div>
+                  <div class="pin-hitbox" data-pin="PA2" data-type="mcu">
+                    <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="PA2" data-type="mcu"></div>
+                  </div>
+                </div>
+
+                <!-- PB0 Pin -->
+                <div class="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <div>
+                    <span class="text-indigo-400 font-bold text-[11px]">PB0</span>
+                    <span class="text-[9px] text-slate-400 block -mt-1">Gripper</span>
+                  </div>
+                  <div class="pin-hitbox" data-pin="PB0" data-type="mcu">
+                    <div class="pin-socket bg-slate-800 border-2 border-indigo-400" data-pin="PB0" data-type="mcu"></div>
+                  </div>
+                </div>
+
+                <!-- PB4 Pin (Sensor) -->
+                <div class="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800 col-span-2">
+                  <div>
+                    <span class="text-amber-400 font-bold text-[11px]">PB4</span>
+                    <span class="text-[9px] text-slate-400">Optik Konveyör Sensör Girişi</span>
+                  </div>
+                  <div class="pin-hitbox" data-pin="PB4" data-type="mcu">
+                    <div class="pin-socket bg-slate-800 border-2 border-amber-400" data-pin="PB4" data-type="mcu"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Target Robot Hardware Modules -->
+            <div class="space-y-2">
+              
+              <!-- J1 Joint -->
+              <div class="bg-slate-900/95 border border-slate-800 p-2 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-xs">J1</div>
+                  <div>
+                    <div class="text-xs font-bold text-white leading-tight">Taban Servosu</div>
+                    <div class="text-[10px] text-slate-400">180° Dönüş Ekseni</div>
+                  </div>
+                </div>
+                <div class="pin-hitbox" data-pin="DEV_J1" data-type="device">
+                  <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="DEV_J1" data-type="device"></div>
+                </div>
+              </div>
+
+              <!-- J2 Joint -->
+              <div class="bg-slate-900/95 border border-slate-800 p-2 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-xs">J2</div>
+                  <div>
+                    <div class="text-xs font-bold text-white leading-tight">Omuz Servosu</div>
+                    <div class="text-[10px] text-slate-400">Dikey Yükselme</div>
+                  </div>
+                </div>
+                <div class="pin-hitbox" data-pin="DEV_J2" data-type="device">
+                  <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="DEV_J2" data-type="device"></div>
+                </div>
+              </div>
+
+              <!-- J3 Joint -->
+              <div class="bg-slate-900/95 border border-slate-800 p-2 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-xs">J3</div>
+                  <div>
+                    <div class="text-xs font-bold text-white leading-tight">Dirsek Servosu</div>
+                    <div class="text-[10px] text-slate-400">Uzanma & Denge</div>
+                  </div>
+                </div>
+                <div class="pin-hitbox" data-pin="DEV_J3" data-type="device">
+                  <div class="pin-socket bg-slate-800 border-2 border-cyan-400" data-pin="DEV_J3" data-type="device"></div>
+                </div>
+              </div>
+
+              <!-- Gripper -->
+              <div class="bg-slate-900/95 border border-slate-800 p-2 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-indigo-950 border border-indigo-500/40 flex items-center justify-center text-indigo-300 font-bold text-xs">GRP</div>
+                  <div>
+                    <div class="text-xs font-bold text-white leading-tight">Pnömatik Gripper</div>
+                    <div class="text-[10px] text-slate-400">Solenoid Röle</div>
+                  </div>
+                </div>
+                <div class="pin-hitbox" data-pin="DEV_GRP" data-type="device">
+                  <div class="pin-socket bg-slate-800 border-2 border-indigo-400" data-pin="DEV_GRP" data-type="device"></div>
+                </div>
+              </div>
+
+              <!-- Sensor -->
+              <div class="bg-slate-900/95 border border-slate-800 p-2 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-amber-950 border border-amber-500/40 flex items-center justify-center text-amber-300 font-bold text-xs">SEN</div>
+                  <div>
+                    <div class="text-xs font-bold text-white leading-tight">Konveyör Sensörü</div>
+                    <div class="text-[10px] text-slate-400">Kızılötesi Bariyer</div>
+                  </div>
+                </div>
+                <div class="pin-hitbox" data-pin="DEV_SEN" data-type="device">
+                  <div class="pin-socket bg-slate-800 border-2 border-amber-400" data-pin="DEV_SEN" data-type="device"></div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- Bottom Wiring Status Bar -->
+          <div class="mt-3 p-2 bg-slate-900/90 rounded-lg border border-slate-800 flex justify-between items-center text-[11px] font-mono">
+            <span class="text-slate-400">Bağlantı Rehberi:</span>
+            <span id="wiring-status-badge" class="text-amber-400 font-bold">0 / 5 Hat Hazır</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 3: MOBILE BLOCK CODING & HAL C STUDIO -->
+    <!-- ================================================================= -->
+    <section id="tab-sec-coding" class="space-y-3 hidden">
+      
+      <!-- Subtabs for Mobile Coding: Blocks vs C Code Preview -->
+      <div class="flex border-b border-slate-800 bg-[#0c1220] rounded-xl p-1 gap-1">
+        <button id="btn-subtab-blocks" class="flex-1 py-1.5 text-xs font-mono font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition">
+          🧩 Görsel Bloklar
+        </button>
+        <button id="btn-subtab-code" class="flex-1 py-1.5 text-xs font-mono font-medium rounded-lg text-slate-400 hover:text-white transition">
+          📄 STM32 HAL C Kodu
+        </button>
+      </div>
+
+      <!-- View A: Blocks Studio -->
+      <div id="subview-blocks" class="space-y-3 block">
+        
+        <!-- Palette drawer (Collapsible) -->
+        <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3 shadow-xl">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-xs font-bold text-white flex items-center gap-1.5 font-mono">
+              <span>➕</span> Blok Ekle (Tıkla ve Ekle)
+            </h3>
+            <div class="flex gap-1">
+              <button onclick="loadBlockPreset('pick_and_place')" class="px-2 py-1 bg-slate-800 text-[10px] font-mono text-cyan-300 rounded border border-cyan-500/30">
+                📦 Pick & Place
+              </button>
+              <button onclick="clearWorkspace()" class="px-2 py-1 bg-rose-950/50 text-[10px] font-mono text-rose-300 rounded border border-rose-800/40">
+                Sil
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Palette Buttons Grid (Designed for easy mobile thumb taps) -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <button onclick="addBlockToWorkspace('act_j1')" class="p-2 rounded-lg bg-cyan-700/80 active:bg-cyan-600 text-white font-mono text-[11px] font-bold text-left border border-cyan-500/40">
+              📐 Taban J1 Açısı
+            </button>
+            <button onclick="addBlockToWorkspace('act_j2')" class="p-2 rounded-lg bg-cyan-800/80 active:bg-cyan-700 text-white font-mono text-[11px] font-bold text-left border border-cyan-500/40">
+              📐 Omuz J2 Açısı
+            </button>
+            <button onclick="addBlockToWorkspace('act_j3')" class="p-2 rounded-lg bg-cyan-900/80 active:bg-cyan-800 text-white font-mono text-[11px] font-bold text-left border border-cyan-500/40">
+              📐 Dirsek J3 Açısı
+            </button>
+            <button onclick="addBlockToWorkspace('act_delay')" class="p-2 rounded-lg bg-emerald-800/80 active:bg-emerald-700 text-white font-mono text-[11px] font-bold text-left border border-emerald-500/40">
+              ⏳ Bekle (ms)
+            </button>
+            <button onclick="addBlockToWorkspace('act_gripper_close')" class="p-2 rounded-lg bg-indigo-700/80 active:bg-indigo-600 text-white font-mono text-[11px] font-bold text-left border border-indigo-500/40">
+              🧲 Gripper TUT
+            </button>
+            <button onclick="addBlockToWorkspace('act_gripper_open')" class="p-2 rounded-lg bg-indigo-900/80 active:bg-indigo-800 text-white font-mono text-[11px] font-bold text-left border border-indigo-500/40">
+              🖐 Gripper BIRAK
+            </button>
+          </div>
+        </div>
+
+        <!-- Ordered Stack Container -->
+        <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3 shadow-xl">
+          <div class="flex justify-between items-center mb-2 pb-1.5 border-b border-slate-800">
+            <span class="text-xs font-mono font-bold text-slate-300">Yürütülecek Kod Sırası</span>
+            <span class="text-[10px] text-slate-500 font-mono">Yukarıdan aşağıya</span>
+          </div>
+          <div id="block-workspace-stack" class="space-y-1.5 max-h-[380px] overflow-y-auto p-1">
+            <!-- Workspace blocks rendered here -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- View B: Generated C Code -->
+      <div id="subview-code" class="space-y-3 hidden">
+        <div class="bg-[#0b101c] border border-slate-800 rounded-2xl p-3 shadow-xl">
+          <div class="flex justify-between items-center mb-2 pb-1.5 border-b border-slate-800">
+            <span class="text-xs font-mono font-bold text-cyan-400">main.c (STM32 HAL)</span>
+            <button id="btn-copy-c-code" class="px-2.5 py-1 text-[11px] font-mono text-cyan-300 bg-slate-800 rounded border border-cyan-500/30">
+              Kopyala
+            </button>
+          </div>
+          <pre id="c-code-preview" class="p-2.5 bg-black/70 rounded-lg text-emerald-400 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-[440px]">
+/* STM32 C Firmware Kodu Burada Üretilir */
+          </pre>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 4: MOBILE ROBOTIC ARM TEST SIMULATION -->
+    <!-- ================================================================= -->
+    <section id="tab-sec-sim" class="space-y-3 hidden">
+      
+      <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl space-y-3">
+        
+        <!-- Simulation Execution Controls -->
+        <div class="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+          <div>
+            <h3 class="text-xs sm:text-sm font-bold text-white leading-tight">Robot Hücresi</h3>
+            <span id="sim-status-label" class="text-[10px] font-mono text-slate-400">Beklemede</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="btn-run-sim" class="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold text-xs rounded-lg active:scale-95 transition flex items-center gap-1 shadow-md shadow-emerald-500/20">
+              <span>▶</span> Çalıştır
+            </button>
+            <button id="btn-stop-sim" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 font-mono text-xs rounded-lg border border-slate-700 active:scale-95 transition">
+              ⏹ Durdur
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Responsive Robot Canvas -->
+        <div class="relative bg-[#050811] rounded-xl border border-slate-800 overflow-hidden min-h-[260px] sm:min-h-[340px] flex items-center justify-center grid-bg">
+          <canvas id="robotCanvas" class="w-full h-auto block"></canvas>
+
+          <!-- Telemetry overlay -->
+          <div class="absolute top-2 left-2 right-2 flex justify-between items-center text-[10px] font-mono text-slate-400 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded border border-slate-800 pointer-events-none">
+            <div>J1:<span id="hud-j1" class="text-cyan-400 font-bold ml-1">90°</span> J2:<span id="hud-j2" class="text-cyan-400 font-bold ml-1">45°</span></div>
+            <div>Sensör:<span id="hud-sens" class="text-slate-400 font-bold ml-1">TEMİZ</span></div>
+          </div>
+        </div>
+
+        <!-- Oscilloscope & Mini Terminal (Accordion on mobile) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          
+          <!-- Oscilloscope -->
+          <div class="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div class="flex justify-between items-center mb-1 text-[10px] font-mono text-cyan-400 font-bold">
+              <span>TIM2 PWM Dalga Formu (50Hz)</span>
+              <span id="scope-pulse-label" class="text-slate-400 font-normal">1.50 ms</span>
+            </div>
+            <canvas id="scopeCanvas" class="w-full h-14 bg-black/60 rounded border border-slate-900 block"></canvas>
+          </div>
+
+          <!-- Serial Terminal Log -->
+          <div class="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div class="flex justify-between items-center mb-1 text-[10px] font-mono text-amber-400 font-bold">
+              <span>USART2 Seri Monitör</span>
+              <button onclick="document.getElementById('serial-log').innerHTML=''" class="text-slate-500">Temizle</button>
+            </div>
+            <div id="serial-log" class="h-14 overflow-y-auto font-mono text-[10px] text-slate-300 space-y-0.5 leading-tight">
+              <div>[SYSTEM] STM32F401 RET6 Hazır.</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 5: INTERACTIVE QUIZ & Q&A ACADEMY (25+ QUESTIONS) -->
+    <!-- ================================================================= -->
+    <section id="tab-sec-quiz" class="space-y-3 hidden">
+      <div class="bg-[#0c1220] border border-slate-800 rounded-2xl p-3.5 sm:p-5 shadow-xl space-y-4">
+        
+        <!-- Academy Header & Live Progress Stats -->
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🎓</span>
+              <h2 class="text-sm sm:text-base font-bold text-white">Mikroelektronik & Robotik Değerlendirme Akademisi</h2>
+            </div>
+            <p class="text-[11px] text-slate-400">Silisyum fizik kimyasından STM32 gömülü mimarisine ve ters kinematiğe 26 detaylı soru.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono">
+              <span class="text-slate-400">Skor: </span>
+              <span id="quiz-total-score" class="text-cyan-400 font-bold">0</span>
+              <span class="text-slate-500"> / </span>
+              <span id="quiz-total-count" class="text-slate-300">26</span>
+            </div>
+            <button id="btn-quiz-reset-all" class="px-2.5 py-1 text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 active:scale-95 transition">
+              Sıfırla
+            </button>
+          </div>
+        </div>
+
+        <!-- Category Tabs -->
+        <div class="flex overflow-x-auto pb-1 gap-1.5 no-scrollbar -mx-1 px-1">
+          <button class="quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 whitespace-nowrap active:scale-95 transition" data-category="fab">
+            🔬 1. Yarıiletken & Fabrikasyon (7)
+          </button>
+          <button class="quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-white bg-slate-900 border border-slate-800 whitespace-nowrap active:scale-95 transition" data-category="hw">
+            🔌 2. Donanım & Kablolama (6)
+          </button>
+          <button class="quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-white bg-slate-900 border border-slate-800 whitespace-nowrap active:scale-95 transition" data-category="c">
+            💻 3. STM32 HAL & Gömülü C (7)
+          </button>
+          <button class="quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-white bg-slate-900 border border-slate-800 whitespace-nowrap active:scale-95 transition" data-category="robot">
+            🤖 4. Robotik & Kinematik (6)
+          </button>
+        </div>
+
+        <!-- Question Container -->
+        <div class="bg-[#070b14] rounded-xl border border-slate-800 p-3 sm:p-4 space-y-3">
+          <div class="flex justify-between items-center text-xs font-mono">
+            <span id="quiz-question-counter" class="text-cyan-400 font-bold">Soru 1 / 7</span>
+            <span id="quiz-category-tag" class="px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 text-[10px]">Yarıiletken & Fabrikasyon</span>
+          </div>
+
+          <h3 id="quiz-question-title" class="text-xs sm:text-sm font-semibold text-white leading-relaxed min-h-[44px]">
+            Soru yükleniyor...
+          </h3>
+
+          <!-- Interactive Choices -->
+          <div id="quiz-options-container" class="space-y-2">
+            <!-- Dynamically populated options -->
+          </div>
+
+          <!-- Technical Explanation Card (Revealed after answer) -->
+          <div id="quiz-feedback-box" class="hidden p-3 rounded-xl text-xs font-sans leading-relaxed border space-y-1">
+            <div id="quiz-feedback-status" class="font-mono font-bold"></div>
+            <div id="quiz-feedback-text" class="text-slate-300 text-[11px]"></div>
+          </div>
+
+          <!-- Question Pagination Controls -->
+          <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+            <button id="btn-quiz-prev" class="px-3 py-1.5 text-xs font-mono text-slate-400 bg-slate-800 rounded-lg active:scale-95 transition disabled:opacity-30">
+              ← Önceki Soru
+            </button>
+            <div id="quiz-dots-indicator" class="flex gap-1">
+              <!-- Dots injected dynamically -->
+            </div>
+            <button id="btn-quiz-next" class="px-4 py-1.5 text-xs font-mono font-bold text-black bg-cyan-400 hover:bg-cyan-300 rounded-lg active:scale-95 transition shadow-sm">
+              Sonraki Soru →
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="fixed bottom-0 left-0 right-0 z-50 bg-[#0c1220]/95 backdrop-blur-lg border-t border-slate-800 py-1 px-2 shadow-2xl">
+    <div class="max-w-md mx-auto grid grid-cols-5 gap-1">
+      
+      <button id="nav-btn-chip" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-cyan-400 bg-cyan-500/15 transition">
+        <span class="text-base leading-none">🔬</span>
+        <span class="text-[9px] font-mono font-medium mt-0.5">1. Çip</span>
+      </button>
+
+      <button id="nav-btn-wiring" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🔌</span>
+        <span class="text-[9px] font-mono font-medium mt-0.5">2. Kablo</span>
+      </button>
+
+      <button id="nav-btn-coding" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🧩</span>
+        <span class="text-[9px] font-mono font-medium mt-0.5">3. Kod</span>
+      </button>
+
+      <button id="nav-btn-sim" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🏭</span>
+        <span class="text-[9px] font-mono font-medium mt-0.5">4. Robot</span>
+      </button>
+
+      <button id="nav-btn-quiz" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🎓</span>
+        <span class="text-[9px] font-mono font-medium mt-0.5">5. Sınav</span>
+      </button>
+
+    </div>
+  </nav>
+
+  <script>
+    // Global Navigation State
+    let activeNavTab = 'chip'; // chip | wiring | coding | sim | quiz
+    let audioEnabled = true;
+
+    // Web Audio Synthesizer
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playTone(freq, type = 'sine', duration = 0.08, gainVal = 0.05) {
+      if (!audioEnabled) return;
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    document.getElementById('btn-audio-toggle').addEventListener('click', () => {
+      audioEnabled = !audioEnabled;
+      document.getElementById('btn-audio-toggle').innerText = audioEnabled ? '🔊' : '🔇';
+    });
+
+    // Mobile Bottom Tab Switcher
+    const navButtons = {
+      chip: document.getElementById('nav-btn-chip'),
+      wiring: document.getElementById('nav-btn-wiring'),
+      coding: document.getElementById('nav-btn-coding'),
+      sim: document.getElementById('nav-btn-sim'),
+      quiz: document.getElementById('nav-btn-quiz')
+    };
+
+    const sectionPanels = {
+      chip: document.getElementById('tab-sec-chip'),
+      wiring: document.getElementById('tab-sec-wiring'),
+      coding: document.getElementById('tab-sec-coding'),
+      sim: document.getElementById('tab-sec-sim'),
+      quiz: document.getElementById('tab-sec-quiz')
+    };
+
+    const headerBadge = document.getElementById('header-badge');
+
+    function switchNav(tabKey) {
+      activeNavTab = tabKey;
+      
+      // Update UI classes
+      Object.keys(sectionPanels).forEach(key => {
+        sectionPanels[key].classList.add('hidden');
+        navButtons[key].className = 'flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition';
+      });
+
+      sectionPanels[tabKey].classList.remove('hidden');
+      navButtons[tabKey].className = 'flex flex-col items-center justify-center py-1.5 rounded-xl text-cyan-400 bg-cyan-500/15 transition font-bold';
+
+      const titles = {
+        chip: '1. Çip Üretimi',
+        wiring: '2. Kablolama',
+        coding: '3. Blok Kodlama',
+        sim: '4. Robot Hücresi',
+        quiz: '5. Sınav & Q&A'
+      };
+      headerBadge.innerText = titles[tabKey];
+      playTone(460, 'sine', 0.05, 0.04);
+
+      // Trigger redraws based on active viewport
+      if (tabKey === 'chip') {
+        resizeCanvasToDisplaySize(chipCanvas);
+        drawChipSimulation();
+      } else if (tabKey === 'wiring') {
+        setTimeout(renderWires, 40);
+      } else if (tabKey === 'coding') {
+        renderWorkspace();
+        generateCPreview();
+      } else if (tabKey === 'sim') {
+        resizeCanvasToDisplaySize(robotCanvas);
+        resizeCanvasToDisplaySize(scopeCanvas);
+      } else if (tabKey === 'quiz') {
+        renderCurrentQuestion();
+      }
+    }
+
+    Object.keys(navButtons).forEach(key => {
+      navButtons[key].addEventListener('click', () => switchNav(key));
+    });
+
+    const chipSteps = [
+      {
+        id: 0,
+        name: "1. Kristal",
+        title: "Kuvars Kumundan Tek Kristal Wafer'a (Czochralski)",
+        badge: "Faz 1/6: Kristalizasyon",
+        status: "İngot Çekme",
+        hint: "Aşağıdaki kaydırıcıyı çekerek tohum kristali erimiş silisyumdan yukarı kaldırın!",
+        info: "Elektronik Sınıf Silisyum (%99.9999999 saflık), 1425°C'de eritilir. Tek bir tohum kristal daldırılıp ters yönde döndürülerek yukarı çekilir ve tek kristalli silikon külçe oluşturulur.",
+        state: { pullProgress: 20, sliced: false }
+      },
+      {
+        id: 1,
+        name: "2. Litografi",
+        title: "SiO₂ Oksidasyon & DUV Işık Maskeleme",
+        badge: "Faz 2/6: Litografi",
+        status: "Pozlama Bekliyor",
+        hint: "193nm Derin UV ışığını yakın ve plazma ile kapı oksitlerini kazıyın!",
+        info: "Wafer üzerine 1000°C'de yalıtkan SiO₂ ve üzerine ışığa duyarlı fotorezist sürülür. STM32 devresini taşıyan fotomaske üzerinden 193nm DUV lazeri geçirilerek desen oluşturulur.",
+        state: { uvExposed: false, etched: false }
+      },
+      {
+        id: 2,
+        name: "3. Doping",
+        title: "İyon Aşılama ile P/N Transistör Kanalları",
+        badge: "Faz 3/6: Doping",
+        status: "İyon Tabancası Hazır",
+        hint: "İyon hızlandırıcıyı ateşleyerek fosfor atomlarını silikon kafese enjekte edin!",
+        info: "400.000 voltluk yüksek gerilimle hızlandırılan Fosfor (P+) iyonları silikona gömülerek serbest elektron zengini N-tipi kaynak (source) ve savak (drain) bölgeleri oluşturur.",
+        state: { implanted: false }
+      },
+      {
+        id: 3,
+        name: "4. eFlash & Metal",
+        title: "Gömülü Flash Bellek & Çok Katmanlı Bakır Hatlar",
+        badge: "Faz 4/6: Metalizasyon",
+        status: "CVD Metal Biriktirme",
+        hint: "Polisilikon yüzen kapı (floating gate) ve bakır bağlantı yollarını ekleyin!",
+        info: "STM32'nin kodunu saklayan gömülü Flash (eFlash), oksitle hapsedilen yüzen kapı mimarisine sahiptir. Çok katmanlı bakır yollar (Damascene prosesi) transistörleri birbirine bağlar.",
+        state: { layers: 0 }
+      },
+      {
+        id: 4,
+        name: "5. Probing",
+        title: "Wafer Testi (EDS) ve Çip Kesimi (Dicing)",
+        badge: "Faz 5/6: Elektriksel Test",
+        status: "Prob Kartı Temasta",
+        hint: "Tungsten test iğnelerini indirerek sağlam Cortex-M4 çekirdeklerini ayıklayın!",
+        info: "Otomatik test iğneleri her bir çipin padlerine temas ederek frekans ve kaçak akım testleri yapar. Sağlam çipler elmas disklerle kesilerek bağımsız hale getirilir.",
+        state: { tested: false }
+      },
+      {
+        id: 5,
+        name: "6. Paketleme",
+        title: "Altın Tel Bağlama (Wire-Bond) & LQFP Gövde",
+        badge: "Faz 6/6: Nihai Ürün",
+        status: "Sevkiyata Hazır",
+        hint: "Altın telleri bacaklara kaynaklayın, epoksi kılıf dökün ve STM32 kodunu lazerleyin!",
+        info: "Silikon çip lead-frame üzerine yapıştırılır. 25µm altın tellerle dış bacaklara bağlanır, 175°C epoksi reçine kalıplanır ve üzerine lazerle STM32F401RET6 basılır.",
+        state: { wires: false, molded: false, marked: false }
+      }
+    ];
+
+    let currentChipStepIdx = 0;
+    const chipCanvas = document.getElementById('chipCanvas');
+    const cCtx = chipCanvas.getContext('2d');
+
+    // Render mobile step buttons
+    function renderChipStepNav() {
+      const cont = document.getElementById('chip-steps-container');
+      cont.innerHTML = '';
+      chipSteps.forEach((step, idx) => {
+        const btn = document.createElement('button');
+        const isActive = idx === currentChipStepIdx;
+        btn.className = `px-3 py-1.5 rounded-xl text-[11px] font-mono whitespace-nowrap shrink-0 transition flex items-center gap-1.5 ${
+          isActive ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 font-bold' : 'bg-slate-900 text-slate-400 border border-slate-800'
+        }`;
+        btn.innerHTML = `<span class="w-4 h-4 rounded-full flex items-center justify-center text-[9px] ${isActive ? 'bg-cyan-400 text-black font-black' : 'bg-slate-800'}">${idx + 1}</span> ${step.name}`;
+        btn.onclick = () => {
+          currentChipStepIdx = idx;
+          loadChipStepUI();
+        };
+        cont.appendChild(btn);
+      });
+    }
+
+    function loadChipStepUI() {
+      renderChipStepNav();
+      const s = chipSteps[currentChipStepIdx];
+      document.getElementById('chip-step-badge').innerText = s.badge;
+      document.getElementById('chip-step-title').innerText = s.title;
+      document.getElementById('chip-step-status').innerText = s.status;
+      document.getElementById('chip-canvas-hint').innerText = s.hint;
+      document.getElementById('chip-info-body').innerText = s.info;
+
+      document.getElementById('chip-btn-prev').disabled = currentChipStepIdx === 0;
+      document.getElementById('chip-btn-next').innerText = currentChipStepIdx === chipSteps.length - 1 ? 'Kablolamaya Geç →' : 'Sonraki Aşama →';
+
+      renderChipDynamicControls(s);
+      drawChipSimulation();
+    }
+
+    document.getElementById('chip-btn-prev').onclick = () => {
+      if (currentChipStepIdx > 0) {
+        currentChipStepIdx--;
+        loadChipStepUI();
+      }
+    };
+
+    document.getElementById('chip-btn-next').onclick = () => {
+      if (currentChipStepIdx < chipSteps.length - 1) {
+        currentChipStepIdx++;
+        loadChipStepUI();
+      } else {
+        // Move to Wiring Tab
+        switchNav('wiring');
+      }
+    };
+
+    // Toggle tech accordion
+    document.getElementById('btn-toggle-chip-info').onclick = () => {
+      const body = document.getElementById('chip-info-body');
+      const arrow = document.getElementById('chip-info-arrow');
+      body.classList.toggle('hidden');
+      arrow.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+    };
+
+    function renderChipDynamicControls(step) {
+      const box = document.getElementById('chip-dynamic-controls');
+      box.innerHTML = '';
+
+      if (step.id === 0) {
+        box.innerHTML = `
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300">Tohum Kristal Çekme Oranı:</span>
+              <span id="slider-pull-val" class="text-cyan-400 font-bold">${step.state.pullProgress}%</span>
+            </div>
+            <input type="range" min="15" max="95" value="${step.state.pullProgress}" class="w-full h-2 bg-slate-800 rounded-lg accent-cyan-400 cursor-pointer" id="slider-pull">
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <button id="btn-slice-wafer" class="flex-1 py-2 bg-slate-800 active:bg-slate-700 text-cyan-300 text-xs font-mono rounded-lg border border-cyan-500/30">
+              🔪 Wafer Dilimle (775µm)
+            </button>
+          </div>
+        `;
+        document.getElementById('slider-pull').oninput = (e) => {
+          step.state.pullProgress = parseInt(e.target.value);
+          document.getElementById('slider-pull-val').innerText = `${step.state.pullProgress}%`;
+          drawChipSimulation();
+        };
+        document.getElementById('btn-slice-wafer').onclick = () => {
+          step.state.sliced = true;
+          playTone(600, 'triangle', 0.1);
+          drawChipSimulation();
+        };
+      } else if (step.id === 1) {
+        box.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btn-uv" class="py-2 px-2 text-xs font-mono rounded-lg border ${step.state.uvExposed ? 'bg-amber-500/20 text-amber-300 border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+              🔦 ${step.state.uvExposed ? 'DUV: Açık' : '1. 193nm DUV Pozla'}
+            </button>
+            <button id="btn-etch" class="py-2 px-2 text-xs font-mono rounded-lg border ${step.state.etched ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+              🧪 2. Plazma Aşındırma
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-uv').onclick = () => {
+          step.state.uvExposed = !step.state.uvExposed;
+          playTone(step.state.uvExposed ? 700 : 350, 'sine', 0.08);
+          loadChipStepUI();
+        };
+        document.getElementById('btn-etch').onclick = () => {
+          step.state.etched = true;
+          playTone(450, 'square', 0.08);
+          loadChipStepUI();
+        };
+      } else if (step.id === 2) {
+        box.innerHTML = `
+          <button id="btn-doping" class="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-lg active:scale-95 transition shadow">
+            ⚡ 400keV Fosfor (P+) İyon Bombardımanı Yap
+          </button>
+        `;
+        document.getElementById('btn-doping').onclick = () => {
+          step.state.implanted = true;
+          playTone(520, 'triangle', 0.15);
+          drawChipSimulation();
+        };
+      } else if (step.id === 3) {
+        box.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btn-poly" class="py-2 bg-slate-800 active:bg-slate-700 text-yellow-300 text-xs rounded-lg border border-yellow-500/30">
+              + Polisilikon Gate
+            </button>
+            <button id="btn-metal" class="py-2 bg-slate-800 active:bg-slate-700 text-orange-400 text-xs rounded-lg border border-orange-500/30">
+              + Bakır (Cu) Hatlar
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-poly').onclick = () => {
+          step.state.layers = 1;
+          playTone(550, 'sine', 0.08);
+          drawChipSimulation();
+        };
+        document.getElementById('btn-metal').onclick = () => {
+          step.state.layers = 2;
+          playTone(680, 'sine', 0.08);
+          drawChipSimulation();
+        };
+      } else if (step.id === 4) {
+        box.innerHTML = `
+          <button id="btn-probe" class="w-full py-2 bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-bold text-xs rounded-lg">
+            🔬 Otomatik Tungsten Prob Testi Başlat (EDS)
+          </button>
+        `;
+        document.getElementById('btn-probe').onclick = () => {
+          step.state.tested = !step.state.tested;
+          playTone(800, 'triangle', 0.1);
+          drawChipSimulation();
+        };
+      } else if (step.id === 5) {
+        box.innerHTML = `
+          <div class="grid grid-cols-3 gap-1.5">
+            <button id="btn-wire" class="py-1.5 text-[10px] rounded border ${step.state.wires ? 'bg-amber-500/20 text-amber-300 border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+              1. Altın Tel
+            </button>
+            <button id="btn-mold" class="py-1.5 text-[10px] rounded border ${step.state.molded ? 'bg-slate-700 text-slate-200 border-slate-500' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+              2. Epoksi Kalıp
+            </button>
+            <button id="btn-laser" class="py-1.5 text-[10px] rounded border ${step.state.marked ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+              3. Lazer Marka
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-wire').onclick = () => { step.state.wires = true; playTone(600, 'sine', 0.05); loadChipStepUI(); };
+        document.getElementById('btn-mold').onclick = () => { step.state.molded = true; playTone(400, 'sine', 0.05); loadChipStepUI(); };
+        document.getElementById('btn-laser').onclick = () => { step.state.marked = true; playTone(900, 'triangle', 0.08); loadChipStepUI(); };
+      }
+    }
+
+    // High-DPI Canvas Resizing Helper
+    function resizeCanvasToDisplaySize(cnv) {
+      if (!cnv) return false;
+      const width = cnv.clientWidth;
+      const height = cnv.clientHeight || Math.round(width * 0.55);
+      const dpr = window.devicePixelRatio || 1;
+      
+      if (cnv.width !== width * dpr || cnv.height !== height * dpr) {
+        cnv.width = width * dpr;
+        cnv.height = height * dpr;
+        const context = cnv.getContext('2d');
+        context.scale(dpr, dpr);
+        return true;
+      }
+      return false;
+    }
+
+    // Render Chip Simulation Frames
+    function drawChipSimulation() {
+      resizeCanvasToDisplaySize(chipCanvas);
+      const w = chipCanvas.clientWidth;
+      const h = chipCanvas.clientHeight;
+      cCtx.clearRect(0, 0, w, h);
+
+      const step = chipSteps[currentChipStepIdx];
+
+      if (step.id === 0) {
+        // Czochralski Crucible
+        const cx = w / 2;
+        // Molten bath
+        cCtx.fillStyle = '#b45309';
+        cCtx.beginPath();
+        cCtx.roundRect(cx - 100, h - 80, 200, 70, [0, 0, 20, 20]);
+        cCtx.fill();
+
+        // Ingot pull
+        const pullH = (step.state.pullProgress / 100) * (h - 120);
+        const topY = (h - 90) - pullH;
+        
+        cCtx.fillStyle = '#64748b';
+        cCtx.fillRect(cx - 4, 10, 8, topY);
+
+        // Growing Ingot Body
+        cCtx.fillStyle = '#94a3b8';
+        cCtx.beginPath();
+        cCtx.moveTo(cx - 6, topY);
+        cCtx.lineTo(cx - 32, topY + 25);
+        cCtx.lineTo(cx - 32, h - 80);
+        cCtx.quadraticCurveTo(cx, h - 72, cx + 32, h - 80);
+        cCtx.lineTo(cx + 32, topY + 25);
+        cCtx.lineTo(cx + 6, topY);
+        cCtx.fill();
+
+        if (step.state.sliced) {
+          cCtx.strokeStyle = '#38bdf8';
+          cCtx.lineWidth = 2;
+          cCtx.beginPath();
+          cCtx.ellipse(w - 60, 50, 45, 20, 0, 0, 2 * Math.PI);
+          cCtx.stroke();
+          cCtx.fillStyle = '#38bdf8';
+          cCtx.font = '9px monospace';
+          cCtx.fillText('Wafer Dilimi', w - 90, 85);
+        }
+      } else if (step.id === 1) {
+        // Litho Cross-section
+        const sx = 30;
+        const sw = w - 60;
+        const sy = h - 60;
+
+        // Substrate
+        cCtx.fillStyle = '#1e293b';
+        cCtx.fillRect(sx, sy, sw, 50);
+
+        // Oxide
+        cCtx.fillStyle = '#38bdf8';
+        if (!step.state.etched) {
+          cCtx.fillRect(sx, sy - 14, sw, 14);
+        } else {
+          cCtx.fillRect(sx, sy - 14, sw * 0.3, 14);
+          cCtx.fillRect(sx + sw * 0.7, sy - 14, sw * 0.3, 14);
+        }
+
+        // UV beam
+        if (step.state.uvExposed && !step.state.etched) {
+          cCtx.fillStyle = 'rgba(56, 189, 248, 0.3)';
+          cCtx.fillRect(sx + sw * 0.3, 20, sw * 0.4, sy - 34);
+          cCtx.fillStyle = '#38bdf8';
+          cCtx.font = '10px monospace';
+          cCtx.fillText('193nm DUV Demeti', sx + sw * 0.32, 40);
+        }
+      } else if (step.id === 2) {
+        // Doping
+        const sx = 30;
+        const sw = w - 60;
+        const sy = h - 70;
+
+        cCtx.fillStyle = '#1e293b';
+        cCtx.fillRect(sx, sy, sw, 60);
+
+        if (step.state.implanted) {
+          cCtx.fillStyle = '#10b981';
+          cCtx.beginPath();
+          cCtx.roundRect(sx + sw * 0.2, sy, sw * 0.25, 30, [0, 0, 10, 10]);
+          cCtx.roundRect(sx + sw * 0.55, sy, sw * 0.25, 30, [0, 0, 10, 10]);
+          cCtx.fill();
+
+          cCtx.fillStyle = '#fff';
+          cCtx.font = '9px monospace';
+          cCtx.fillText('N+ Kaynak', sx + sw * 0.22, sy + 20);
+          cCtx.fillText('N+ Savak', sx + sw * 0.57, sy + 20);
+        }
+      } else if (step.id === 3) {
+        // eFlash & Metal
+        const sx = 30;
+        const sw = w - 60;
+        const sy = h - 60;
+
+        cCtx.fillStyle = '#1e293b';
+        cCtx.fillRect(sx, sy, sw, 50);
+
+        if (step.state.layers >= 1) {
+          // Floating gate
+          cCtx.fillStyle = '#f59e0b';
+          cCtx.fillRect(sx + sw * 0.4, sy - 18, sw * 0.2, 10);
+          // Control gate
+          cCtx.fillStyle = '#eab308';
+          cCtx.fillRect(sx + sw * 0.38, sy - 34, sw * 0.24, 12);
+        }
+        if (step.state.layers >= 2) {
+          // Copper
+          cCtx.fillStyle = '#ea580c';
+          cCtx.fillRect(sx + 20, sy - 60, sw - 40, 14);
+          cCtx.fillStyle = '#ffffff';
+          cCtx.font = '9px monospace';
+          cCtx.fillText('Bakır Bus Yolu', sx + 30, sy - 50);
+        }
+      } else if (step.id === 4) {
+        // Probing
+        const cx = w / 2;
+        cCtx.fillStyle = '#0f172a';
+        cCtx.strokeStyle = '#0284c7';
+        cCtx.lineWidth = 2;
+        cCtx.strokeRect(cx - 90, h - 110, 180, 90);
+        cCtx.fillRect(cx - 90, h - 110, 180, 90);
+
+        cCtx.fillStyle = '#38bdf8';
+        cCtx.font = '10px monospace';
+        cCtx.fillText('ARM Cortex-M4', cx - 45, h - 65);
+
+        // Probe needles
+        const ny = step.state.tested ? h - 110 : h - 140;
+        cCtx.strokeStyle = '#cbd5e1';
+        for (let x = cx - 70; x <= cx + 70; x += 25) {
+          cCtx.beginPath();
+          cCtx.moveTo(x - 10, 20);
+          cCtx.lineTo(x, ny);
+          cCtx.stroke();
+        }
+      } else if (step.id === 5) {
+        // Packaging
+        const cx = w / 2;
+        const cy = h / 2;
+
+        if (!step.state.molded) {
+          cCtx.fillStyle = '#b45309';
+          cCtx.fillRect(cx - 50, cy - 40, 100, 80);
+          cCtx.fillStyle = '#0f172a';
+          cCtx.fillRect(cx - 35, cy - 25, 70, 50);
+
+          if (step.state.wires) {
+            cCtx.strokeStyle = '#fbbf24';
+            cCtx.lineWidth = 1.5;
+            for (let i = -20; i <= 20; i += 10) {
+              cCtx.beginPath();
+              cCtx.moveTo(cx + i, cy - 25);
+              cCtx.lineTo(cx + i * 1.5, cy - 50);
+              cCtx.stroke();
+            }
+          }
+        } else {
+          // Molded LQFP package
+          cCtx.fillStyle = '#0f172a';
+          cCtx.strokeStyle = '#334155';
+          cCtx.lineWidth = 2;
+          cCtx.beginPath();
+          cCtx.roundRect(cx - 60, cy - 50, 120, 100, 8);
+          cCtx.fill();
+          cCtx.stroke();
+
+          if (step.state.marked) {
+            cCtx.fillStyle = '#06b6d4';
+            cCtx.font = 'bold 11px monospace';
+            cCtx.fillText('STM32F4', cx - 25, cy - 10);
+            cCtx.fillStyle = '#94a3b8';
+            cCtx.font = '9px monospace';
+            cCtx.fillText('RET6 ARM', cx - 22, cy + 10);
+          }
+        }
+      }
+    }
+
+    let activeWires = [];
+    let selectedPin = null;
+
+    const requiredConnections = {
+      'PA0': 'DEV_J1',
+      'PA1': 'DEV_J2',
+      'PA2': 'DEV_J3',
+      'PB0': 'DEV_GRP',
+      'PB4': 'DEV_SEN'
+    };
+
+    const wiringBench = document.getElementById('mobile-wiring-bench');
+    const wiringSvg = document.getElementById('wiring-svg');
+    const pinHitboxes = document.querySelectorAll('.pin-hitbox');
+
+    pinHitboxes.forEach(hitbox => {
+      // Pointerdown handles both finger tap on phone and mouse click seamlessly
+      hitbox.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const pinId = hitbox.dataset.pin;
+        const pinType = hitbox.dataset.type;
+        const socket = hitbox.querySelector('.pin-socket');
+
+        if (!selectedPin) {
+          selectedPin = { pinId, pinType, socket };
+          socket.classList.add('selected-source');
+          playTone(620, 'sine', 0.05);
+        } else {
+          if (selectedPin.pinId === pinId) {
+            // Deselect
+            selectedPin.socket.classList.remove('selected-source');
+            selectedPin = null;
+            return;
+          }
+
+          if (selectedPin.pinType !== pinType) {
+            const mcuPin = (selectedPin.pinType === 'mcu') ? selectedPin.pinId : pinId;
+            const devPin = (selectedPin.pinType === 'device') ? selectedPin.pinId : pinId;
+
+            // Filter out existing wire for this device
+            activeWires = activeWires.filter(w => w.devPin !== devPin);
+
+            activeWires.push({
+              mcuPin,
+              devPin,
+              color: getWireColor(mcuPin)
+            });
+
+            playTone(850, 'triangle', 0.08);
+            renderWires();
+            validateWiring();
+          } else {
+            playTone(200, 'square', 0.08);
+          }
+
+          selectedPin.socket.classList.remove('selected-source');
+          selectedPin = null;
+        }
+      });
+    });
+
+    function getWireColor(pin) {
+      if (pin === 'PA0') return '#38bdf8';
+      if (pin === 'PA1') return '#06b6d4';
+      if (pin === 'PA2') return '#0ea5e9';
+      if (pin === 'PB0') return '#818cf8';
+      if (pin === 'PB4') return '#f59e0b';
+      return '#10b981';
+    }
+
+    function renderWires() {
+      wiringSvg.innerHTML = '';
+      const bRect = wiringBench.getBoundingClientRect();
+
+      // Reset socket glow
+      document.querySelectorAll('.pin-socket').forEach(s => s.classList.remove('connected'));
+
+      activeWires.forEach((wire, idx) => {
+        const mEl = document.querySelector(`.pin-socket[data-pin="${wire.mcuPin}"]`);
+        const dEl = document.querySelector(`.pin-socket[data-pin="${wire.devPin}"]`);
+
+        if (mEl && dEl) {
+          mEl.classList.add('connected');
+          dEl.classList.add('connected');
+
+          const r1 = mEl.getBoundingClientRect();
+          const r2 = dEl.getBoundingClientRect();
+
+          const x1 = r1.left + r1.width / 2 - bRect.left;
+          const y1 = r1.top + r1.height / 2 - bRect.top;
+          const x2 = r2.left + r2.width / 2 - bRect.left;
+          const y2 = r2.top + r2.height / 2 - bRect.top;
+
+          const dx = Math.abs(x2 - x1);
+          const dy = Math.abs(y2 - y1);
+          const cx1 = x1 + (dx > 30 ? dx * 0.4 : 30);
+          const cy1 = y1 + dy * 0.2;
+          const cx2 = x2 - (dx > 30 ? dx * 0.4 : 30);
+          const cy2 = y2 - dy * 0.2;
+
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`);
+          path.setAttribute('stroke', wire.color);
+          path.setAttribute('stroke-width', '4');
+          path.setAttribute('fill', 'none');
+          path.setAttribute('title', 'Kabloya dokunup kaldırabilirsiniz');
+
+          path.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            activeWires.splice(idx, 1);
+            playTone(250, 'sawtooth', 0.08);
+            renderWires();
+            validateWiring();
+          });
+
+          wiringSvg.appendChild(path);
+        }
+      });
+    }
+
+    function validateWiring() {
+      let okCount = 0;
+      for (const [m, d] of Object.entries(requiredConnections)) {
+        if (activeWires.some(w => w.mcuPin === m && w.devPin === d)) okCount++;
+      }
+      const badge = document.getElementById('wiring-status-badge');
+      badge.innerText = `${okCount} / 5 Hat Hazır`;
+      badge.className = okCount === 5 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold';
+    }
+
+    document.getElementById('btn-auto-wire').onclick = () => {
+      activeWires = [
+        { mcuPin: 'PA0', devPin: 'DEV_J1', color: '#38bdf8' },
+        { mcuPin: 'PA1', devPin: 'DEV_J2', color: '#06b6d4' },
+        { mcuPin: 'PA2', devPin: 'DEV_J3', color: '#0ea5e9' },
+        { mcuPin: 'PB0', devPin: 'DEV_GRP', color: '#818cf8' },
+        { mcuPin: 'PB4', devPin: 'DEV_SEN', color: '#f59e0b' }
+      ];
+      playTone(720, 'triangle', 0.1);
+      renderWires();
+      validateWiring();
+      logSerial('DONANIM: Otomatik kablo demeti takıldı.');
+    };
+
+    document.getElementById('btn-clear-wire').onclick = () => {
+      activeWires = [];
+      renderWires();
+      validateWiring();
+      playTone(220, 'sawtooth', 0.08);
+      logSerial('DONANIM: Kablolar temizlendi.');
+    };
+
+    // Re-render wires on orientation change / resize
+    window.addEventListener('resize', () => {
+      if (activeNavTab === 'wiring') renderWires();
+      if (activeNavTab === 'chip') drawChipSimulation();
+    });
+
+    let workspaceBlocks = [
+      { id: 'b1', type: 'act_j1', label: 'Taban J1 Açısı', val: 35 },
+      { id: 'b2', type: 'act_j2', label: 'Omuz J2 Açısı', val: 65 },
+      { id: 'b3', type: 'act_delay', label: 'Bekle (ms)', val: 500 },
+      { id: 'b4', type: 'act_gripper_close', label: 'Gripper TUT', val: 0 },
+      { id: 'b5', type: 'act_delay', label: 'Bekle (ms)', val: 400 },
+      { id: 'b6', type: 'act_j1', label: 'Taban J1 Açısı', val: 140 },
+      { id: 'b7', type: 'act_delay', label: 'Bekle (ms)', val: 500 },
+      { id: 'b8', type: 'act_gripper_open', label: 'Gripper BIRAK', val: 0 }
+    ];
+
+    // Mobile subtabs (Blocks vs C Code)
+    const btnSubBlocks = document.getElementById('btn-subtab-blocks');
+    const btnSubCode = document.getElementById('btn-subtab-code');
+    const subviewBlocks = document.getElementById('subview-blocks');
+    const subviewCode = document.getElementById('subview-code');
+
+    btnSubBlocks.onclick = () => {
+      subviewBlocks.classList.remove('hidden');
+      subviewCode.classList.add('hidden');
+      btnSubBlocks.className = 'flex-1 py-1.5 text-xs font-mono font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition';
+      btnSubCode.className = 'flex-1 py-1.5 text-xs font-mono font-medium rounded-lg text-slate-400 hover:text-white transition';
+    };
+
+    btnSubCode.onclick = () => {
+      subviewCode.classList.remove('hidden');
+      subviewBlocks.classList.add('hidden');
+      btnSubCode.className = 'flex-1 py-1.5 text-xs font-mono font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition';
+      btnSubBlocks.className = 'flex-1 py-1.5 text-xs font-mono font-medium rounded-lg text-slate-400 hover:text-white transition';
+      generateCPreview();
+    };
+
+    function renderWorkspace() {
+      const stack = document.getElementById('block-workspace-stack');
+      stack.innerHTML = '';
+
+      if (workspaceBlocks.length === 0) {
+        stack.innerHTML = `
+          <div class="py-8 text-center text-slate-500 text-xs font-mono">
+            Henüz blok eklenmedi. Yukarıdaki butonlardan blok ekleyin.
+          </div>
+        `;
+        return;
+      }
+
+      workspaceBlocks.forEach((blk, idx) => {
+        const item = document.createElement('div');
+        let bgStyle = 'bg-slate-800 border-slate-700';
+
+        if (blk.type.startsWith('act_j')) bgStyle = 'bg-cyan-900/80 border-cyan-500/60 text-white';
+        else if (blk.type.startsWith('act_gripper')) bgStyle = 'bg-indigo-900/80 border-indigo-500/60 text-white';
+        else if (blk.type === 'act_delay') bgStyle = 'bg-emerald-900/80 border-emerald-500/60 text-white';
+
+        item.className = `p-2 rounded-xl border font-mono text-xs block-card flex items-center justify-between gap-2 ${bgStyle}`;
+
+        let valInput = '';
+        if (blk.type.startsWith('act_j')) {
+          valInput = `
+            <div class="flex items-center gap-1">
+              <input type="number" min="0" max="180" value="${blk.val}" 
+                     class="w-12 py-1 px-1 rounded bg-black/50 text-center font-bold text-cyan-200 border border-white/20 text-xs"
+                     onchange="updateBlockValue(${idx}, this.value)" />
+              <span class="text-[10px]">°</span>
+            </div>
+          `;
+        } else if (blk.type === 'act_delay') {
+          valInput = `
+            <div class="flex items-center gap-1">
+              <input type="number" min="50" max="2000" step="50" value="${blk.val}" 
+                     class="w-14 py-1 px-1 rounded bg-black/50 text-center font-bold text-emerald-200 border border-white/20 text-xs"
+                     onchange="updateBlockValue(${idx}, this.value)" />
+              <span class="text-[10px]">ms</span>
+            </div>
+          `;
+        }
+
+        item.innerHTML = `
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="text-[10px] opacity-60 font-bold">#${idx + 1}</span>
+            <span class="font-bold truncate text-[11px]">${blk.label}</span>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            ${valInput}
+            <div class="flex items-center gap-0.5 pl-1">
+              <button onclick="moveBlock(${idx}, -1)" class="w-6 h-6 bg-black/30 active:bg-black/60 rounded flex items-center justify-center text-[10px]">▲</button>
+              <button onclick="moveBlock(${idx}, 1)" class="w-6 h-6 bg-black/30 active:bg-black/60 rounded flex items-center justify-center text-[10px]">▼</button>
+              <button onclick="deleteBlock(${idx})" class="w-6 h-6 bg-rose-950/60 active:bg-rose-900 rounded flex items-center justify-center text-[10px] text-rose-300">✕</button>
+            </div>
+          </div>
+        `;
+        stack.appendChild(item);
+      });
+    }
+
+    window.addBlockToWorkspace = function(type) {
+      let b = { id: 'b_' + Date.now(), type, val: 0 };
+      if (type === 'act_j1') { b.label = 'Taban J1'; b.val = 90; }
+      else if (type === 'act_j2') { b.label = 'Omuz J2'; b.val = 45; }
+      else if (type === 'act_j3') { b.label = 'Dirsek J3'; b.val = 60; }
+      else if (type === 'act_delay') { b.label = 'Bekle'; b.val = 500; }
+      else if (type === 'act_gripper_close') { b.label = 'Gripper TUT'; }
+      else if (type === 'act_gripper_open') { b.label = 'Gripper BIRAK'; }
+
+      workspaceBlocks.push(b);
+      renderWorkspace();
+      generateCPreview();
+      playTone(550, 'triangle', 0.05);
+    };
+
+    window.updateBlockValue = function(idx, val) {
+      if (workspaceBlocks[idx]) {
+        workspaceBlocks[idx].val = parseInt(val) || 0;
+        generateCPreview();
+      }
+    };
+
+    window.moveBlock = function(idx, delta) {
+      const tgt = idx + delta;
+      if (tgt < 0 || tgt >= workspaceBlocks.length) return;
+      const t = workspaceBlocks[idx];
+      workspaceBlocks[idx] = workspaceBlocks[tgt];
+      workspaceBlocks[tgt] = t;
+      renderWorkspace();
+      generateCPreview();
+      playTone(420, 'sine', 0.04);
+    };
+
+    window.deleteBlock = function(idx) {
+      workspaceBlocks.splice(idx, 1);
+      renderWorkspace();
+      generateCPreview();
+      playTone(280, 'sawtooth', 0.04);
+    };
+
+    window.clearWorkspace = function() {
+      workspaceBlocks = [];
+      renderWorkspace();
+      generateCPreview();
+    };
+
+    window.loadBlockPreset = function(name) {
+      if (name === 'pick_and_place') {
+        workspaceBlocks = [
+          { id: 'p1', type: 'act_j1', label: 'Taban J1 Açısı', val: 35 },
+          { id: 'p2', type: 'act_j2', label: 'Omuz J2 Açısı', val: 70 },
+          { id: 'p3', type: 'act_delay', label: 'Bekle (ms)', val: 400 },
+          { id: 'p4', type: 'act_gripper_close', label: 'Gripper TUT', val: 0 },
+          { id: 'p5', type: 'act_delay', label: 'Bekle (ms)', val: 300 },
+          { id: 'p6', type: 'act_j2', label: 'Omuz J2 Açısı', val: 30 },
+          { id: 'p7', type: 'act_j1', label: 'Taban J1 Açısı', val: 145 },
+          { id: 'p8', type: 'act_j2', label: 'Omuz J2 Açısı', val: 65 },
+          { id: 'p9', type: 'act_delay', label: 'Bekle (ms)', val: 400 },
+          { id: 'p10', type: 'act_gripper_open', label: 'Gripper BIRAK', val: 0 }
+        ];
+        renderWorkspace();
+        generateCPreview();
+        playTone(660, 'triangle', 0.08);
+      }
+    };
+
+    function generateCPreview() {
+      let c = `/* STM32F401RE Kinematik Robot Firmware */\n#include "stm32f4xx_hal.h"\n\nTIM_HandleTypeDef htim2;\n\nvoid Set_Servo(uint32_t ch, uint8_t deg) {\n  uint32_t pulse = 1000 + ((uint32_t)deg * 1000) / 180;\n  __HAL_TIM_SET_COMPARE(&htim2, ch, pulse);\n}\n\nint main(void) {\n  HAL_Init();\n  MX_TIM2_Init();\n  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1); // PA0\n  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2); // PA1\n  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3); // PA2\n\n  while (1) {\n`;
+
+      workspaceBlocks.forEach(b => {
+        if (b.type === 'act_j1') c += `    Set_Servo(TIM_CHANNEL_1, ${b.val}); /* PA0 J1 */\n`;
+        else if (b.type === 'act_j2') c += `    Set_Servo(TIM_CHANNEL_2, ${b.val}); /* PA1 J2 */\n`;
+        else if (b.type === 'act_j3') c += `    Set_Servo(TIM_CHANNEL_3, ${b.val}); /* PA2 J3 */\n`;
+        else if (b.type === 'act_delay') c += `    HAL_Delay(${b.val});\n`;
+        else if (b.type === 'act_gripper_close') c += `    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); // Tut\n`;
+        else if (b.type === 'act_gripper_open') c += `    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); // Bırak\n`;
+      });
+
+      c += `  }\n}\n`;
+      document.getElementById('c-code-preview').innerText = c;
+    }
+
+    document.getElementById('btn-copy-c-code').onclick = () => {
+      const code = document.getElementById('c-code-preview').innerText;
+      const el = document.createElement('textarea');
+      el.value = code;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      document.getElementById('btn-copy-c-code').innerText = '✓ Kopyalandı';
+      setTimeout(() => document.getElementById('btn-copy-c-code').innerText = 'Kopyala', 1200);
+    };
+
+    const robotCanvas = document.getElementById('robotCanvas');
+    const rCtx = robotCanvas.getContext('2d');
+    const scopeCanvas = document.getElementById('scopeCanvas');
+    const scCtx = scopeCanvas.getContext('2d');
+
+    let isSimRunning = false;
+    let simStepIdx = 0;
+    let simTimer = null;
+
+    // Kinematics State: Smooth Interpolated Joint Angles
+    let arm = { j1: 90, j2: 45, j3: 60, grp: false };
+    let armTarget = { ...arm };
+
+    // End-Effector World Position (Computed dynamically for smooth pickup/release)
+    let eePos = { x: 0, y: 0 };
+
+    // Enhanced Glitch-Free Workpiece Physics Engine
+    // States: 'conveyor' (moving along belt) | 'picked' (smoothly welded to gripper) | 'dropping' (falling into bin) | 'boxed' (resting inside bin)
+    let piece = {
+      x: 35,
+      y: 0,
+      targetX: 35,
+      targetY: 0,
+      w: 20,
+      h: 20,
+      state: 'conveyor', // conveyor | picked | dropping | boxed
+      dropVy: 0,
+      respawnTimer: 0
+    };
+
+    // Stable Pick & Place Workcell Positions
+    const PICKUP_ZONE_X = 175; // Laser beam sensor trigger location
+    let binTargetX = 0; // Set dynamically according to responsive canvas width
+
+    document.getElementById('btn-run-sim').onclick = () => {
+      // Validate hardware lines
+      let missing = null;
+      for (const [m, d] of Object.entries(requiredConnections)) {
+        if (!activeWires.some(w => w.mcuPin === m && w.devPin === d)) {
+          missing = `${m} ➔ ${d}`;
+          break;
+        }
+      }
+
+      if (missing) {
+        logSerial(`[HATA] Donanım eksik: ${missing}. Kablolama sekmesinden bağlayın.`);
+        playTone(180, 'sawtooth', 0.2);
+        switchNav('wiring');
+        return;
+      }
+
+      if (workspaceBlocks.length === 0) {
+        logSerial('[UYARI] Çalıştırılacak kod bloğu yok.');
+        return;
+      }
+
+      isSimRunning = true;
+      simStepIdx = 0;
+      document.getElementById('sim-status-label').innerText = 'DÖNGÜDE';
+      document.getElementById('sim-status-label').className = 'text-[10px] font-mono text-emerald-400 font-bold';
+      logSerial('[MCU] STM32F401 firmware başladı.');
+      playTone(600, 'sine', 0.1);
+      stepSim();
+    };
+
+    document.getElementById('btn-stop-sim').onclick = () => {
+      isSimRunning = false;
+      clearTimeout(simTimer);
+      document.getElementById('sim-status-label').innerText = 'DURDURULDU';
+      document.getElementById('sim-status-label').className = 'text-[10px] font-mono text-rose-400';
+      logSerial('[EMERGENCY] Robot acil durduruldu.');
+      playTone(200, 'square', 0.12);
+    };
+
+    function stepSim() {
+      if (!isSimRunning || workspaceBlocks.length === 0) return;
+
+      const blk = workspaceBlocks[simStepIdx];
+      let delay = 350;
+
+      if (blk.type === 'act_j1') {
+        armTarget.j1 = blk.val;
+        playTone(320, 'sawtooth', 0.08, 0.02);
+      } else if (blk.type === 'act_j2') {
+        armTarget.j2 = blk.val;
+        playTone(360, 'sawtooth', 0.08, 0.02);
+      } else if (blk.type === 'act_j3') {
+        armTarget.j3 = blk.val;
+        playTone(390, 'sawtooth', 0.08, 0.02);
+      } else if (blk.type === 'act_gripper_close') {
+        armTarget.grp = true;
+        playTone(180, 'square', 0.04, 0.08);
+
+        // Precise Proximity Check: Only pick up when gripper is near the part in pickup zone
+        const distToPiece = Math.hypot(eePos.x - (piece.x + piece.w / 2), eePos.y - (piece.y + piece.h / 2));
+        if (piece.state === 'conveyor' && distToPiece < 38) {
+          piece.state = 'picked';
+          logSerial('[GRIPPER] Parça mekanik olarak kilitlendi.');
+        }
+      } else if (blk.type === 'act_gripper_open') {
+        armTarget.grp = false;
+        playTone(180, 'square', 0.04, 0.08);
+
+        if (piece.state === 'picked') {
+          // If released on the right side over the collection bin
+          if (arm.j1 > 115) {
+            piece.state = 'dropping';
+            piece.dropVy = 0.5;
+            logSerial('[SUCCESS] Parça hedef kutuya bırakıldı.');
+          } else {
+            // Dropped back onto the table/conveyor
+            piece.state = 'dropping';
+            piece.dropVy = 0.5;
+            logSerial('[GRIPPER] Parça serbest bırakıldı.');
+          }
+        }
+      } else if (blk.type === 'act_delay') {
+        delay = blk.val || 500;
+      }
+
+      simStepIdx = (simStepIdx + 1) % workspaceBlocks.length;
+      simTimer = setTimeout(stepSim, delay);
+    }
+
+    function logSerial(msg) {
+      const log = document.getElementById('serial-log');
+      const d = new Date().toTimeString().split(' ')[0];
+      const div = document.createElement('div');
+      div.innerHTML = `<span class="text-slate-500">[${d}]</span> ${msg}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Kinematics Frame Loop (Smooth 60FPS Delta Calculation)
+    function updateAndRenderRobot() {
+      resizeCanvasToDisplaySize(robotCanvas);
+      const w = robotCanvas.clientWidth;
+      const h = robotCanvas.clientHeight;
+      rCtx.clearRect(0, 0, w, h);
+
+      // Smooth arm motion interpolation without micro-stutters
+      arm.j1 += (armTarget.j1 - arm.j1) * 0.14;
+      arm.j2 += (armTarget.j2 - arm.j2) * 0.14;
+      arm.j3 += (armTarget.j3 - arm.j3) * 0.14;
+      arm.grp = armTarget.grp;
+
+      // Conveyor & Table geometry (relative to responsive canvas size)
+      const beltY = h - 50;
+      const binX = w - 85;
+      binTargetX = binX + 25;
+
+      // Update Conveyor & Piece Motion Physics
+      if (piece.state === 'conveyor') {
+        // Move steadily towards pick-up sensor
+        if (piece.x < PICKUP_ZONE_X - piece.w / 2) {
+          piece.x += 1.4;
+        } else {
+          // Pause at sensor beam for robot pickup
+          piece.x = PICKUP_ZONE_X - piece.w / 2;
+        }
+        piece.y = beltY - piece.h;
+      } else if (piece.state === 'picked') {
+        // Smooth kinematic welding to gripper without positional jitter
+        piece.x = eePos.x - piece.w / 2;
+        piece.y = eePos.y + 10;
+      } else if (piece.state === 'dropping') {
+        // Natural gravity drop into bin or table
+        piece.dropVy += 0.8;
+        piece.y += piece.dropVy;
+
+        const floorLimit = beltY - piece.h;
+        if (piece.y >= floorLimit) {
+          piece.y = floorLimit;
+          piece.state = (piece.x >= binX - 10) ? 'boxed' : 'conveyor';
+          piece.dropVy = 0;
+          piece.respawnTimer = 60; // 1 second respawn countdown
+        }
+      } else if (piece.state === 'boxed') {
+        // Part is resting inside bin, count down to spawn a new part on conveyor
+        if (piece.respawnTimer > 0) {
+          piece.respawnTimer--;
+          if (piece.respawnTimer === 0) {
+            piece.x = 25;
+            piece.y = beltY - piece.h;
+            piece.state = 'conveyor';
+            logSerial('[FEEDER] Yeni silikon iş parçası konveyöre verildi.');
+          }
+        }
+      }
+
+      // Proximity Sensor Logic (Optical PB4)
+      const isSensing = (piece.state === 'conveyor' && Math.abs((piece.x + piece.w / 2) - PICKUP_ZONE_X) < 12);
+      const hudSens = document.getElementById('hud-sens');
+      hudSens.innerText = isSensing ? 'CİSİM VAR (PB4)' : 'TEMİZ';
+      hudSens.className = isSensing ? 'text-amber-400 font-bold ml-1' : 'text-slate-400 font-bold ml-1';
+
+      // Draw Conveyor Belt
+      rCtx.fillStyle = '#1e293b';
+      rCtx.fillRect(15, beltY, 210, 20);
+
+      // Rollers animation on conveyor
+      rCtx.fillStyle = '#475569';
+      for (let rx = 25; rx <= 215; rx += 22) {
+        rCtx.beginPath();
+        rCtx.arc(rx, beltY + 10, 5, 0, 2 * Math.PI);
+        rCtx.fill();
+      }
+
+      // Optical Sensor Bracket & Laser Beam
+      rCtx.fillStyle = '#f59e0b';
+      rCtx.fillRect(PICKUP_ZONE_X - 4, beltY - 26, 8, 26);
+      rCtx.strokeStyle = isSensing ? '#ef4444' : 'rgba(245, 158, 11, 0.45)';
+      rCtx.lineWidth = isSensing ? 2 : 1;
+      rCtx.setLineDash([2, 2]);
+      rCtx.beginPath();
+      rCtx.moveTo(PICKUP_ZONE_X, beltY - 26);
+      rCtx.lineTo(PICKUP_ZONE_X, beltY);
+      rCtx.stroke();
+      rCtx.setLineDash([]);
+
+      // Bin on right
+      rCtx.fillStyle = '#0f172a';
+      rCtx.strokeStyle = '#0284c7';
+      rCtx.lineWidth = 1.5;
+      rCtx.strokeRect(binX, beltY - 25, 75, 35);
+      rCtx.fillRect(binX, beltY - 25, 75, 35);
+      rCtx.fillStyle = '#38bdf8';
+      rCtx.font = '9px monospace';
+      rCtx.fillText('HEDEF KASA', binX + 6, beltY - 8);
+
+      // Robot Base
+      const baseX = w * 0.52;
+      const baseY = beltY;
+
+      rCtx.fillStyle = '#334155';
+      rCtx.fillRect(baseX - 30, baseY, 60, 25);
+
+      // Kinematic Calculations (2-link planar projection with base yaw)
+      const r1 = (arm.j1 * Math.PI) / 180;
+      const r2 = (arm.j2 * Math.PI) / 180;
+      const r3 = (arm.j3 * Math.PI) / 180;
+
+      const L1 = 75;
+      const L2 = 65;
+
+      const yawSign = r1 < Math.PI / 2 ? -1 : 1;
+      const j2X = baseX;
+      const j2Y = baseY - 15;
+
+      const j3X = j2X + Math.sin(r2) * L1 * yawSign;
+      const j3Y = j2Y - Math.cos(r2) * L1;
+
+      const eeX = j3X + Math.sin(r2 + r3 - 1.1) * L2 * yawSign;
+      const eeY = j3Y + Math.cos(r2 + r3 - 1.1) * L2;
+
+      // Update global end-effector coordinates for zero-jitter physics tracking
+      eePos.x = eeX;
+      eePos.y = eeY;
+
+      // Draw Robot Links
+      rCtx.lineCap = 'round';
+
+      // Link 1 (Shoulder)
+      rCtx.strokeStyle = '#ea580c';
+      rCtx.lineWidth = 14;
+      rCtx.beginPath();
+      rCtx.moveTo(j2X, j2Y);
+      rCtx.lineTo(j3X, j3Y);
+      rCtx.stroke();
+
+      // Link 2 (Forearm)
+      rCtx.strokeStyle = '#f59e0b';
+      rCtx.lineWidth = 10;
+      rCtx.beginPath();
+      rCtx.moveTo(j3X, j3Y);
+      rCtx.lineTo(eeX, eeY);
+      rCtx.stroke();
+
+      // Joints
+      rCtx.fillStyle = '#0f172a';
+      rCtx.strokeStyle = '#cbd5e1';
+      rCtx.lineWidth = 2;
+      rCtx.beginPath();
+      rCtx.arc(j2X, j2Y, 8, 0, 2 * Math.PI);
+      rCtx.fill();
+      rCtx.stroke();
+
+      rCtx.beginPath();
+      rCtx.arc(j3X, j3Y, 6, 0, 2 * Math.PI);
+      rCtx.fill();
+      rCtx.stroke();
+
+      // Gripper fingers
+      const spread = arm.grp ? 4 : 10;
+      rCtx.strokeStyle = arm.grp ? '#10b981' : '#cbd5e1';
+      rCtx.lineWidth = 3;
+      rCtx.beginPath();
+      rCtx.moveTo(eeX - 3, eeY);
+      rCtx.lineTo(eeX - spread, eeY + 14);
+      rCtx.moveTo(eeX + 3, eeY);
+      rCtx.lineTo(eeX + spread, eeY + 14);
+      rCtx.stroke();
+
+      // Draw Workpiece with soft shadow & crisp metallic edges
+      rCtx.fillStyle = piece.state === 'picked' ? '#38bdf8' : (piece.state === 'boxed' ? '#10b981' : '#0284c7');
+      rCtx.strokeStyle = '#e0f2fe';
+      rCtx.lineWidth = 1.5;
+      rCtx.beginPath();
+      rCtx.roundRect(piece.x, piece.y, piece.w, piece.h, 3);
+      rCtx.fill();
+      rCtx.stroke();
+
+      // Silicon Die pattern on the box
+      rCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      rCtx.fillRect(piece.x + 4, piece.y + 4, piece.w - 8, piece.h - 8);
+
+      // Telemetry HUD
+      document.getElementById('hud-j1').innerText = `${Math.round(arm.j1)}°`;
+      document.getElementById('hud-j2').innerText = `${Math.round(arm.j2)}°`;
+    }
+
+    // Oscilloscope Animation
+    let scPhase = 0;
+    function renderScope() {
+      resizeCanvasToDisplaySize(scopeCanvas);
+      const sw = scopeCanvas.clientWidth;
+      const sh = scopeCanvas.clientHeight;
+      scCtx.clearRect(0, 0, sw, sh);
+
+      const pulseMs = 1.0 + (armTarget.j1 / 180.0) * 1.0;
+      document.getElementById('scope-pulse-label').innerText = `${pulseMs.toFixed(2)} ms`;
+
+      const periodPx = 60;
+      const highPx = periodPx * (pulseMs / 20.0);
+
+      scCtx.strokeStyle = '#38bdf8';
+      scCtx.lineWidth = 1.5;
+      scCtx.beginPath();
+      scPhase = (scPhase + 1.5) % periodPx;
+
+      for (let x = -periodPx; x < sw + periodPx; x += periodPx) {
+        const sx = x - scPhase;
+        scCtx.moveTo(sx, sh - 8);
+        scCtx.lineTo(sx, 10);
+        scCtx.lineTo(sx + highPx, 10);
+        scCtx.lineTo(sx + highPx, sh - 8);
+        scCtx.lineTo(sx + periodPx, sh - 8);
+      }
+      scCtx.stroke();
+    }
+
+    // =========================================================================
+    // SECTION 5: EXTENSIVE 26-QUESTION QUIZ & Q&A ACADEMY DATA & LOGIC
+    // =========================================================================
+    const quizDatabase = {
+      fab: [
+        {
+          id: 'fab_1',
+          question: "Kuvars kumundan elde edilen metalurjik silisyumun, entegre devre üretilebilecek Elektronik Sınıf Silisyum (EGS) seviyesine ulaşması için gereken saflık oranı nedir?",
+          options: [
+            "%95.0 saflık (Endüstriyel döküm standardı)",
+            "%99.9999999 (9N saflık - Bir milyar silikon atomunda en fazla 1 yabancı atom)",
+            "%85.5 saflık (Geri kalanı iletkenliği artıran bakır ve alüminyumdur)",
+            "%100.0 mutlak teorik saflık (Doğada saf kristal olarak bulunur)"
+          ],
+          correct: 1,
+          exp: "Elektronik Sınıf Silisyum (EGS) için 9N (Nine Nines - %99.9999999) saflık şarttır. Milyarda bir atomdan daha fazla istenmeyen safsızlık olması, nanometrik transistörlerde kontrolsüz kaçak akımlara ve arızalara yol açar."
+        },
+        {
+          id: 'fab_2',
+          question: "Czochralski yönteminde tek kristalli silikon külçe (ingot) oluşturulurken tohum kristalin ters yönde döndürülerek yukarı çekilmesinin temel fiziksel amacı nedir?",
+          options: [
+            "Erimiş silisyumun yüzey gerilimini artırarak wafer'ı kare şeklinde katılaştırmak",
+            "Termal simetri sağlayarak atomların kusursuz tek kristal kafes düzeninde homojen büyümesini sağlamak",
+            "Silisyumun erime sıcaklığını 1425°C'den 500°C'ye düşürmek",
+            "Wafer içine önceden altın tel bağlantılarını yerleştirmek"
+          ],
+          correct: 1,
+          exp: "Tohum kristalin zıt yönde dönerek çekilmesi, eriyik havuzundaki sıcaklık gradyanını radyal olarak dengeler ve atomların tek bir yönde (örneğin <100> kristal düzleminde) dislokasyonsuz tek kristal oluşturmasını sağlar."
+        },
+        {
+          id: 'fab_3',
+          question: "Fotolitografi prosesinde kullanılan 193nm Derin Ultraviyole (DUV) ışığının dalga boyu neden görünür ışıktan (örneğin 550nm yeşil ışık) daha kısa seçilir?",
+          options: [
+            "Kısa dalga boyu, optik kırınım (diffraction) sınırını küçülterek silikon üzerinde onlarca nanometrelik hatların çözünmesini sağlar",
+            "193nm dalga boyundaki ışık silikon pulu ısıtarak anında lehimleme yapar",
+            "Görünür ışık temiz oda ortamında gözleri kör edebilir",
+            "Fotorezist polimeri yalnızca kırmızı ve yeşil ışıkta sertleşir"
+          ],
+          correct: 0,
+          exp: "Rayleigh kırınım denklemine göre ($R = k_1 \\cdot \\frac{\\lambda}{NA}$), ışığın dalga boyu ($\\lambda$) ne kadar küçük olursa çözünürlük o kadar artar. 193nm DUV lazeri sayesinde nanometre ölçeğinde transistör kapıları çizilebilir."
+        },
+        {
+          id: 'fab_4',
+          question: "Yarı iletken fabrikasyonunda 400 keV gerilimle hızlandırılan Fosfor (P) iyon bombardımanının (Doping) MOSFET üzerindeki asıl işlevi nedir?",
+          options: [
+            "Silikon pulun kalınlığını 775 mikrondan 100 mikrona inceltmek",
+            "Silikon kafese serbest elektron sağlayarak transistörün N-tipi kaynak (Source) ve savak (Drain) kutuplarını oluşturmak",
+            "Çipin üzerine STM32 model numarasını kazımak",
+            "Çipin ters akımlarda patlamasını engellemek için topraklama hattı açmak"
+          ],
+          correct: 1,
+          exp: "4 valans elektronlu silisyum kristaline 5 valans elektronlu Fosfor aşılandığında, her fosfor atomu silikon örgüye 1 serbest iletim elektronu bağışlar. Böylece negatif taşıyıcı zengini N+ Source ve Drain bölgeleri oluşur."
+        },
+        {
+          id: 'fab_5',
+          question: "STM32 mikrodenetleyicilerinde bulunan gömülü Flash (eFlash) belleği, normal lojik transistörlerden ayıran kritik yapısal parça hangisidir?",
+          options: [
+            "Transistörün altına yerleştirilen minyatür lityum batarya",
+            "Oksit katmanları arasına tamamen hapsedilmiş elektron depolayan Yüzen Kapı (Floating Gate / Charge Trap)",
+            "Her bir bayt için ayrılmış mekanik bir mikro röle",
+            "Termal direnci düşüren sıvı nitrojen kanalları"
+          ],
+          correct: 1,
+          exp: "eFlash hücreleri, kontrol kapısı ile silikon kanal arasında oksit yalıtkanıyla izole edilmiş iletken bir 'Floating Gate' barındırır. Kuantum tünelleme ile buraya hapsedilen elektronlar güç kesilse bile en az 10 yıl veriyi saklar."
+        },
+        {
+          id: 'fab_6',
+          question: "Wafer Probing (EDS) aşamasında tungsten test iğnelerinin görevi nedir ve 'Wafer Haritası' (Wafer Map) neden çıkarılır?",
+          options: [
+            "Wafer'ı tek tek mikroçiplere fiziksel olarak kesmek için",
+            "Çipleri paketleme öncesinde elektriksel olarak test edip kusurlu olanları işaretlemek ve gereksiz paketleme maliyetini önlemek",
+            "Çipin gövdesine koruyucu siyah epoksi reçine dökmek",
+            "Çipin çalışma voltajını 3.3V'tan 220V'a yükseltmek"
+          ],
+          correct: 1,
+          exp: "Otomatik test kartı yüzlerce tungsten iğneyle her die'ın test pad'lerine dokunur; frekans, kaçak akım ve flash okuma testleri yapar. Hatalı çipler haritada işaretlenir ve paketleme yapılmadan elenir."
+        },
+        {
+          id: 'fab_7',
+          question: "Wire-Bonding işleminde silikon die üzerindeki pad'ler ile LQFP kurşun çerçevenin (lead frame) bacakları arasına çekilen telin özellikleri nelerdir?",
+          options: [
+            "1 mm kalınlığında çelik halat",
+            "Yaklaşık 25 µm (mikrometre) çapında saf altın (Au) veya bakır (Cu) tel",
+            "Yüksek voltaj taşıyan fiber optik cam kablo",
+            "Örgülü süperiletken nikel tel"
+          ],
+          correct: 1,
+          exp: "Wire-bonding telleri insan saçından (ortalama 70-100µm) yaklaşık 3-4 kat daha incedir (~20-25µm). Oksitlenmeyen, mükemmel iletken olan ve ultrasonik kaynakla kolay bağlanan saf altın veya bakır kullanılır."
+        }
+      ],
+      hw: [
+        {
+          id: 'hw_1',
+          question: "STM32F401RE Nucleo kartında bir servo motorun açısını (0°-180°) hassas kontrol etmek için neden standart dijital GPIO yerine TIM2 PWM pini (örneğin PA0) kullanılır?",
+          options: [
+            "Çünkü dijital pin sadece 0V veya 3.3V verir; servo motorlar ise 50Hz frekansta 1ms - 2ms darbe genişliğiyle açı bilgisi alır",
+            "Çünkü standart pinler motora 220V alternatif akım gönderir",
+            "Çünkü PA0 pini motorun ağırlığını taşımak için mekanik olarak kalın üretilmiştir",
+            "Çünkü TIM2 zamanlayıcısı sadece saat yönünün tersine dönüşe izin verir"
+          ],
+          correct: 0,
+          exp: "Standart model uçak ve endüstriyel RC servoları 50Hz (20ms periyot) PWM sinyaliyle sürülür. Darbe genişliği 1.0ms iken 0°, 1.5ms iken 90° ve 2.0ms iken 180° konumu temsil eder. Bu hassas darbeyi donanımsal zamanlayıcı (Timer) üretir."
+        },
+        {
+          id: 'hw_2',
+          question: "Bir endüstriyel robot hücresinde STM32'nin PB0 pininden pnömatik gripper tutucuyu tetiklerken araya neden bir transistör/röle sürücü devresi konulmalıdır?",
+          options: [
+            "STM32 pinleri maksimum ~20-25mA akım verebilir; oysa pnömatik solenoid valf yüzlerce miliamper akım çeker ve doğrudan bağlanırsa MCU pinini yakar",
+            "Pnömatik gripper sadece analog ses dalgalarıyla çalıştığı için",
+            "Röle konulmazsa motorun yönü tersine döner",
+            "STM32'nin saat frekansını 84MHz'den 16MHz'e düşürmek için"
+          ],
+          correct: 0,
+          exp: "Mikrodenetleyici I/O pinleri hassas lojik seviyedir (3.3V, max ~25mA). Solenoid valfler ve röleler ise endüktif yük olup yüksek akım çeker ve kapanırken ters EMK (voltaj sıçraması) üretir; bu yüzden transistör/MOSFET ve flyback diyot ile sürülmelidir."
+        },
+        {
+          id: 'hw_3',
+          question: "Konveyör üzerindeki optik kızılötesi sensörün çıkışı STM32'nin PB4 pinine bağlanmıştır. Parça sensörün önüne geldiğinde kızılötesi ışın kesilirse PB4 lojik olarak hangi duruma geçer (Active-Low konfigürasyonunda)?",
+          options: [
+            "Lojik HIGH (+3.3V)",
+            "Lojik LOW (0V / GND seviyesi)",
+            "Yüksek Empedans (Hi-Z sonsuz direnç)",
+            "Negatif 12 Volt (-12V)"
+          ],
+          correct: 1,
+          exp: "Endüstriyel NPN optokuplörler ve bariyer sensörleri yaygın olarak 'Active-Low' çalışır. Işın kesildiğinde çıkış transistörü iletime geçer ve pini toprağa (LOW / 0V) çeker. Yazılımda pull-up direnci ile bu düşen kenar algılanır."
+        },
+        {
+          id: 'hw_4',
+          question: "STM32F401RET6 mikrodenetleyicisinde 'RET6' kodu donanım açısından neyi ifade eder?",
+          options: [
+            "R = 64-pin, E = 512KB Flash, T = LQFP Kılıf, 6 = -40°C ila +85°C endüstriyel sıcaklık aralığı",
+            "R = Radyo frekansı, E = Ethernet kartı, T = Dokunmatik ekran, 6 = 6 eksenli cayro",
+            "R = Robotik, E = Eğitim serisi, T = Test aşamasında, 6 = 6 volt besleme",
+            "R = Rusya versiyonu, E = Eeprom yok, T = Transistörsüz, 6 = 6 çekirdek"
+          ],
+          correct: 0,
+          exp: "STMicroelectronics parça kodlamasında: R harfi pin sayısını (64-pin), E harfi dahili Flash bellek boyutunu (512 Kbyte), T harfi kılıf tipini (LQFP) ve 6 rakamı standart endüstriyel çalışma sıcaklık aralığını (-40°C / +85°C) belirtir."
+        },
+        {
+          id: 'hw_5',
+          question: "STM32 Nucleo kartlarında bulunan harici kristal osilatör (HSE) veya dahili osilatör (HSI) mikrodenetleyici için neden hayati öneme sahiptir?",
+          options: [
+            "Çipin sıcaklığını 0 derecede dondurmak için",
+            "İşlemci çekirdeğine ve zamanlayıcılara (Timer) saniyede milyonlarca kez (örn. 84 MHz) düzenli saat darbesi üreterek kodların senkron işletilmesini sağlamak için",
+            "Robot kolunun kablolarını otomatik lehimlemek için",
+            "Seri portun sadece Türkçe karakter göndermesini sağlamak için"
+          ],
+          correct: 1,
+          exp: "Mikrodenetleyiciler senkron dijital sistemlerdir. Program sayacı (PC), komut işleme hatları (pipelining) ve PWM zamanlayıcıları osilatörün ürettiği saat darbeleriyle (clock ticks) adım adım yürütülür."
+        },
+        {
+          id: 'hw_6',
+          question: "Bir DC motor veya güçlü servolar mikrodenetleyici ile aynı +5V kaynağından doğrudan beslendiğinde STM32 neden rastgele reset atabilir (Brown-Out Reset)?",
+          options: [
+            "Motor dönerken STM32'nin Flash belleğindeki C kodlarını sildiği için",
+            "Motor kalkış anında aşırı ani akım çekerek besleme voltajını çökertebilir; gerilim eşiğin altına inince dahili BOR devresi MCU'yu koruma amaçlı resetler",
+            "Motorun sesi mikrodenetleyicinin mikrofonuna girdiği için",
+            "Topraklama kablosu gereksiz yere takıldığı için"
+          ],
+          correct: 1,
+          exp: "Motorlar kalkışta anlık yüksek akım (stall current) çeker. Güç kaynağının voltajı 2.7V altına çökerse STM32'nin BOR (Brown-Out Reset) devresi tetiklenir ve çip kilitlenmeyi önlemek için kendini sıfırlar. Bu yüzden motor ve lojik beslemeleri ayrılmalı ve dekuplaj kondansatörleri konulmalıdır."
+        }
+      ],
+      c: [
+        {
+          id: 'c_1',
+          question: "STM32 HAL kütüphanesinde `__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse);` fonksiyonunun temel amacı nedir?",
+          options: [
+            "TIM2 zamanlayıcısının Channel 1 çıkışındaki CCR (Capture/Compare) kaydına darbe genişliği değerini yazarak PWM doluluk oranını (Duty Cycle) değiştirmek",
+            "Mikrodenetleyiciyi uyku moduna (Sleep) sokmak",
+            "Cortex-M4 işlemcisinin saat frekansını iki katına çıkarmak",
+            "Seri porttan ekrana 'Compare OK' yazdırmak"
+          ],
+          correct: 0,
+          exp: "PWM sinyalinin lojik HIGH kaldığı süre CCR (Capture/Compare Register) değeri ile belirlenir. Bu makro doğrudan CCR kaydına yazarak servonun döneceği açıya karşılık gelen darbe süresini donanımsal olarak ayarlar."
+        },
+        {
+          id: 'c_2',
+          question: "Bir robotik kolda `HAL_Delay(1000);` fonksiyonu çağrıldığında işlemci arka planda ne yapar?",
+          options: [
+            "Tüm osilatörleri durdurur ve tamamen kapanır",
+            "Dahili SysTick kesmesi (1ms periyotlu) sayaç değerini kontrol ederek 1000ms boyunca 'meşgul bekleme' (busy-wait) döngüsünde kalır",
+            "Robot kolu anında 1000 derece döndürür",
+            "Flash belleği baştan sona silip tekrar yazar"
+          ],
+          correct: 1,
+          exp: "`HAL_Delay()` fonksiyonu SysTick donanım kesmesiyle her 1 milisaniyede bir artırılan `uwTick` değişkenini sorgulayan bir döngüdür. Bu sürede işlemci başka bir iş yapamaz (kesmeler hariç)."
+        },
+        {
+          id: 'c_3',
+          question: "STM32'de bir GPIO pinini çıkış (Output) ve HIGH seviyesine getirmek için aşağıdaki HAL fonksiyonlarından hangisi kullanılır?",
+          options: [
+            "HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);",
+            "HAL_TIM_PWM_Start(GPIOB, 0);",
+            "HAL_ADC_Start(&hadc1);",
+            "HAL_Delay(GPIO_PIN_SET);"
+          ],
+          correct: 0,
+          exp: "`HAL_GPIO_WritePin` fonksiyonu ilgili GPIO portunu (örn. GPIOB), hedef pini (GPIO_PIN_0) ve durumu (GPIO_PIN_SET = HIGH, GPIO_PIN_RESET = LOW) alarak pin voltajını doğrudan 3.3V veya 0V yapar."
+        },
+        {
+          id: 'c_4',
+          question: "Embedded C programlamasında bir donanım giriş kaydını okurken neden `volatile` anahtar kelimesi kullanılır?",
+          options: [
+            "Değişkenin değerinin RAM yerine Flash belleğe kalıcı yazılması için",
+            "Derleyicinin optimizasyon yaparak değişkeni sabit sanıp döngü içinde kaydı tekrar tekrar okumayı ihmal etmesini engellemek için",
+            "Değişkeni sadece negatif sayılarla sınırlandırmak için",
+            "Fonksiyonun C++ ile derlenmesini sağlamak için"
+          ],
+          correct: 1,
+          exp: "`volatile`, derleyiciye bu bellek adresinin değerinin dış bir donanım (sensör, buton veya kesme) tarafından her an değiştirilebileceğini bildirir. Derleyici böylece okuma işlemini optimize edip atlamaz."
+        },
+        {
+          id: 'c_5',
+          question: "STM32 mimarisinde NVIC (Nested Vectored Interrupt Controller) biriminin robotik uygulamalardaki en büyük avantajı nedir?",
+          options: [
+            "Robotun kasasını paslanmaya karşı koruması",
+            "Acil durdurma butonu veya sensör tetiklendiğinde ana döngüyü anında keserek mikrosaniyeler içinde öncelikli kesme fonksiyonunu (ISR) çalıştırması",
+            "C kodlarını otomatik olarak Python koduna çevirmesi",
+            "Robotun pil seviyesini kablosuz şarj etmesi"
+          ],
+          correct: 1,
+          exp: "ARM Cortex-M çekirdeğindeki NVIC donanımı, donanım kesmelerini çok düşük gecikmeyle (low latency) yönetir. Kritik bir emniyet sensörü tetiklendiğinde, işlemci mevcut işi durdurup acil güvenlik rutinine geçer."
+        },
+        {
+          id: 'c_6',
+          question: "Aşağıdaki kod parçasının görevi nedir?\n`if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4) == GPIO_PIN_RESET) { ... }`",
+          options: [
+            "GPIOB portunun 4. pinine bağlı sensörden 0V (LOW) seviyesi geldiğini, yani cisim algılandığını tespit etmek",
+            "PB4 pinini 1000V gerilimle şarj etmek",
+            "Robotun omuz servosu açısını sıfırlamak",
+            "Zamanlayıcıyı fabrika ayarlarına döndürmek"
+          ],
+          correct: 0,
+          exp: "`HAL_GPIO_ReadPin` fonksiyonu PB4 pininin anlık voltaj seviyesini sorgular. Eğer sensör ışını kesilip pini LOW (RESET) seviyesine çektiyse şart `true` olur ve blok içerisindeki komutlar yürütülür."
+        },
+        {
+          id: 'c_7',
+          question: "STM32F4'te 84 MHz sistem saatinde TIM2 prescaler (PSC) değeri 83 ve auto-reload (ARR) değeri 19999 olarak ayarlandığında PWM frekansı neden tam 50 Hz olur?",
+          options: [
+            "Çünkü 84 MHz / ((83 + 1) * (19999 + 1)) = 84.000.000 / (84 * 20.000) = 50 Hz formülü geçerlidir",
+            "STM32 her zaman varsayılan olarak 50 Hz üretmek zorundadır",
+            "Prescaler değeri işlemcinin ısısına göre 50 Hz'e otomatik ayarlanır",
+            "Bu sadece bir tesadüftür, frekans voltaja göre değişir"
+          ],
+          correct: 0,
+          exp: "Zamanlayıcı frekans formülü: $f_{PWM} = \\frac{f_{CLK}}{(PSC + 1) \\times (ARR + 1)}$'dir. 84.000.000 / (84 * 20.000) = 50 Hz tam olarak elde edilir ve 20ms'lik servo periyodu kusursuz oluşturulur."
+        }
+      ],
+      robot: [
+        {
+          id: 'robot_1',
+          question: "Endüstriyel bir robotik kolda 'İleri Kinematik' (Forward Kinematics) ile 'Ters Kinematik' (Inverse Kinematics) arasındaki temel fark nedir?",
+          options: [
+            "İleri kinematik robotu ileri doğru yürütür, ters kinematik ise geri vitese takar",
+            "İleri kinematik verilen eklem açılarından tutucunun (gripper) uzaydaki XYZ konumunu hesaplar; Ters kinematik ise hedeflenen XYZ konumuna ulaşmak için eklemlerin alması gereken açıları hesaplar",
+            "İleri kinematik sadece elektrikli motorlarda, ters kinematik pnömatik pistonlarda kullanılır",
+            "Hiçbir fark yoktur, ikisi de aynı matematiksel formüldür"
+          ],
+          correct: 1,
+          exp: "Robot kontrolünde en zor problem Ters Kinematiktir (IK). Parçanın konveyör üzerindeki koordinatını bildiğimizde ($x, y, z$), o noktayı tam yakalayabilmek için omuz, dirsek ve taban motorlarının tam açılarını trigonometrik matrislerle ($Denavit-Hartenberg$) hesaplarız."
+        },
+        {
+          id: 'robot_2',
+          question: "Robot kolunun ucundaki tutucunun (Gripper), konveyörden aldığı parçayı hedef kasaya taşırken 'titremesi / takılması' (jitter/stutter) simülasyonda veya gerçekte en çok hangi nedenden kaynaklanır?",
+          options: [
+            "Robot kolunun boyasının kurumamış olmasından",
+            "Açısal enterpolasyonun (yumuşak hareket rampalarının) yapılmaması veya koordinat referanslarının taşıma sırasında ani sıçrama yapması",
+            "Kutunun renginin mavi olması",
+            "Konveyörün sadece tek yönde dönmesi"
+          ],
+          correct: 1,
+          exp: "Bir cisme tutunulduğu anda nesnenin koordinatları uç elemanına (end-effector) matematiksel olarak kilitlenmeli ve eklem açıları her karede ani atlamalar yerine yumuşak geçişle (linear interpolation / lerp) güncellenmelidir; aksi takdirde titreme ve teleportasyon oluşur."
+        },
+        {
+          id: 'robot_3',
+          question: "3 Serbestlik Dereceli (3-DOF) bir mafsallı robot kolda J1 (Taban), J2 (Omuz) ve J3 (Dirsek) eksenlerinin görev dağılımı nasıldır?",
+          options: [
+            "J1 yatay düzlemde gövdeyi 180° çevirir (Yaw); J2 dikey yükselme sağlar (Pitch); J3 ise ileri uzanma ve dengeyi ayarlar",
+            "Üç eklem de aynı anda sadece yukarı aşağı zıplar",
+            "J1 parçayı tartar, J2 parçayı boyar, J3 parçayı ambalajlar",
+            "J1 acil durum butonudur, motor içermez"
+          ],
+          correct: 0,
+          exp: "Articulated (antropomorfik) 3 eksenli robotlarda J1 ekseni silindirik koordinat sisteminde radyal açıyı (Yaw), J2 dikey ana kol açısını ve J3 ön kolun uzanma mesafesini kontrol eder."
+        },
+        {
+          id: 'robot_4',
+          question: "Robotik bir çalışma hücresinde konveyör bandı üzerindeki parçanın hızının bilinmesi, robot kolunun parçayı 'durmadan hareket halindeyken' alması (Conveyor Tracking / Pick-on-the-fly) için neden şarttır?",
+          options: [
+            "Robot kol parçanın geleceği tahmini buluşma koordinatını hesaplayıp hızını konveyör hızına eşitlemek zorunda olduğu için",
+            "Parça çok hızlı giderse mikrokontrolcünün içine hava dolacağı için",
+            "Konveyör bantları sadece motor durduğunda elektrik ürettiği için",
+            "Sensörün pilinin bitmesini engellemek için"
+          ],
+          correct: 0,
+          exp: "'Conveyor Tracking' tekniğinde optik enkoder konveyörün hızını milisaniyelik ölçer. Robot hedef konuma giderken konveyörün ötelenmesini diferansiyel denklemle hedefe ekler ve bant durdurulmadan parça akıcı şekilde havada yakalanır."
+        },
+        {
+          id: 'robot_5',
+          question: "Pnömatik bir tutucuda (Gripper) vakum vantuzu ile parça taşırken bir parçanın gerçekten tutulup tutulmadığı mikrodenetleyici tarafından nasıl doğrulanır?",
+          options: [
+            "Hatta bağlı bir vakum basınç sensörü (vakum şalteri) ile hattaki negatif basıncın eşik değere ulaşıp ulaşmadığı ölçülerek",
+            "Robot kolun sallanarak kutunun düşüp düşmediğine bakılmasıyla",
+            "İşlemcinin sıcaklığının ölçülmesiyle",
+            "Sadece zamanlayıcıya 5 saniye bekleme koyarak"
+          ],
+          correct: 0,
+          exp: "Endüstriyel güvenlikte açık döngü kabul edilmez. Vakum vantuzu parçaya yapıştığında hava kaçağı kapanır ve hatta vakum seviyesi (örneğin -0.8 bar) yükselir. Basınç sensörü lojik bir sinyalle STM32'ye 'Parça Güvenle Tutuldu' onayı verir."
+        },
+        {
+          id: 'robot_6',
+          question: "Bir SCARA veya mafsallı endüstriyel robotun çalışma uzayında (Work Envelope) 'Tekillik Noktası' (Singularity) ne anlama gelir?",
+          options: [
+            "Robotun prize takıldığı ilk an",
+            "Robot eklemlerinin aynı doğrultuya gelerek bir serbestlik derecesini kaybettiği ve o yönde sonsuz eklem hızı gerektiren matematiksel kilitlenme durumu",
+            "Robotun tüm parçaları başarıyla kutuya yerleştirdiği an",
+            "Mikroçipin enerjisinin kesildiği durum"
+          ],
+          correct: 1,
+          exp: "Kinematik tekillik (Singularity), Jacobian matrisinin determinantının sıfır olduğu andır. Örneğin robot kolu tamamen düz uzandığında, dirsek eklemi anlık olarak belirli bir yönde hareket üretemez ve ters kinematik hesaplaması sonsuz hız gerektirerek kilitlenir."
+        }
+      ]
+    };
+
+    // Quiz State Management
+    let activeQuizCategory = 'fab';
+    let currentCategoryQuestionIdx = 0;
+    let userAnswers = {}; // e.g., { 'fab_1': { selected: 1, correct: true } }
+
+    // Category button selection listeners
+    document.querySelectorAll('.quiz-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeQuizCategory = btn.dataset.category;
+        currentCategoryQuestionIdx = 0;
+
+        document.querySelectorAll('.quiz-cat-btn').forEach(b => {
+          b.className = 'quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-white bg-slate-900 border border-slate-800 whitespace-nowrap active:scale-95 transition';
+        });
+        btn.className = 'quiz-cat-btn px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 whitespace-nowrap active:scale-95 transition';
+
+        renderCurrentQuestion();
+        playTone(520, 'sine', 0.04);
+      });
+    });
+
+    function renderCurrentQuestion() {
+      const qList = quizDatabase[activeQuizCategory];
+      const q = qList[currentCategoryQuestionIdx];
+      const totalInCat = qList.length;
+
+      // Update counters & headers
+      document.getElementById('quiz-question-counter').innerText = `Soru ${currentCategoryQuestionIdx + 1} / ${totalInCat}`;
+      
+      const catNames = {
+        fab: '1. Yarıiletken & Fabrikasyon',
+        hw: '2. Donanım & Kablolama',
+        c: '3. STM32 HAL C Kodu',
+        robot: '4. Robotik & Kinematik'
+      };
+      document.getElementById('quiz-category-tag').innerText = catNames[activeQuizCategory];
+      document.getElementById('quiz-question-title').innerText = q.question;
+
+      // Render answer choices
+      const optBox = document.getElementById('quiz-options-container');
+      optBox.innerHTML = '';
+
+      const answerData = userAnswers[q.id];
+
+      q.options.forEach((optText, optIdx) => {
+        const btn = document.createElement('button');
+        const isSelected = answerData && answerData.selected === optIdx;
+        const isAnswered = Boolean(answerData);
+
+        let styleClass = 'w-full text-left p-2.5 rounded-xl text-xs font-mono transition border flex items-start gap-2.5 active:scale-[0.99] ';
+
+        if (!isAnswered) {
+          styleClass += 'bg-slate-900/90 hover:bg-slate-800/90 border-slate-800 text-slate-300';
+        } else {
+          if (optIdx === q.correct) {
+            styleClass += 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 font-bold';
+          } else if (isSelected && optIdx !== q.correct) {
+            styleClass += 'bg-rose-950/80 border-rose-500/80 text-rose-300 font-medium';
+          } else {
+            styleClass += 'bg-slate-900/40 border-slate-800/40 text-slate-500 opacity-60';
+          }
+        }
+
+        const letter = String.fromCharCode(65 + optIdx);
+        btn.className = styleClass;
+        btn.innerHTML = `
+          <span class="w-5 h-5 rounded-md flex items-center justify-center text-[10px] shrink-0 font-bold ${
+            isSelected ? 'bg-cyan-400 text-black' : 'bg-slate-800 text-slate-400'
+          }">${letter}</span>
+          <span class="leading-relaxed text-[11px]">${optText}</span>
+        `;
+
+        if (!isAnswered) {
+          btn.addEventListener('click', () => handleQuizSelection(q, optIdx));
+        }
+
+        optBox.appendChild(btn);
+      });
+
+      // Feedback Box rendering
+      const feedbackBox = document.getElementById('quiz-feedback-box');
+      const feedbackStatus = document.getElementById('quiz-feedback-status');
+      const feedbackText = document.getElementById('quiz-feedback-text');
+
+      if (answerData) {
+        feedbackBox.classList.remove('hidden');
+        if (answerData.correct) {
+          feedbackBox.className = 'p-3 rounded-xl text-xs font-sans leading-relaxed border space-y-1 bg-emerald-950/40 border-emerald-500/50 text-emerald-300 block';
+          feedbackStatus.innerHTML = '✓ DOĞRU SEÇİM';
+        } else {
+          feedbackBox.className = 'p-3 rounded-xl text-xs font-sans leading-relaxed border space-y-1 bg-rose-950/40 border-rose-500/50 text-rose-300 block';
+          feedbackStatus.innerHTML = '✕ HATALI CEVAP';
+        }
+        feedbackText.innerText = q.exp;
+      } else {
+        feedbackBox.classList.add('hidden');
+      }
+
+      // Prev & Next button states
+      document.getElementById('btn-quiz-prev').disabled = (currentCategoryQuestionIdx === 0);
+      document.getElementById('btn-quiz-next').innerText = (currentCategoryQuestionIdx === totalInCat - 1) ? 'Kategori Sonu ✓' : 'Sonraki Soru →';
+
+      // Indicator Dots
+      renderIndicatorDots(qList);
+      updateTotalScoreUI();
+    }
+
+    function handleQuizSelection(q, selectedIdx) {
+      const isCorrect = (selectedIdx === q.correct);
+      userAnswers[q.id] = { selected: selectedIdx, correct: isCorrect };
+
+      if (isCorrect) {
+        playTone(880, 'triangle', 0.12, 0.08);
+      } else {
+        playTone(220, 'sawtooth', 0.15, 0.08);
+      }
+
+      renderCurrentQuestion();
+    }
+
+    function renderIndicatorDots(qList) {
+      const dotsCont = document.getElementById('quiz-dots-indicator');
+      dotsCont.innerHTML = '';
+      qList.forEach((item, idx) => {
+        const dot = document.createElement('div');
+        const ans = userAnswers[item.id];
+        let colorClass = 'bg-slate-800 border-slate-700';
+
+        if (idx === currentCategoryQuestionIdx) {
+          colorClass = 'ring-2 ring-cyan-400 bg-slate-700';
+        }
+
+        if (ans) {
+          colorClass = ans.correct ? 'bg-emerald-500' : 'bg-rose-500';
+        }
+
+        dot.className = `w-2 h-2 rounded-full border transition-all ${colorClass}`;
+        dotsCont.appendChild(dot);
+      });
+    }
+
+    function updateTotalScoreUI() {
+      let correctTotal = 0;
+      for (const key in userAnswers) {
+        if (userAnswers[key].correct) correctTotal++;
+      }
+      document.getElementById('quiz-total-score').innerText = correctTotal;
+    }
+
+    document.getElementById('btn-quiz-prev').addEventListener('click', () => {
+      if (currentCategoryQuestionIdx > 0) {
+        currentCategoryQuestionIdx--;
+        renderCurrentQuestion();
+        playTone(400, 'sine', 0.04);
+      }
+    });
+
+    document.getElementById('btn-quiz-next').addEventListener('click', () => {
+      const qList = quizDatabase[activeQuizCategory];
+      if (currentCategoryQuestionIdx < qList.length - 1) {
+        currentCategoryQuestionIdx++;
+        renderCurrentQuestion();
+        playTone(480, 'sine', 0.04);
+      } else {
+        // Move to next category if available
+        const cats = ['fab', 'hw', 'c', 'robot'];
+        const currentCatIdx = cats.indexOf(activeQuizCategory);
+        if (currentCatIdx < cats.length - 1) {
+          const nextCat = cats[currentCatIdx + 1];
+          document.querySelector(`.quiz-cat-btn[data-category="${nextCat}"]`).click();
+        }
+      }
+    });
+
+    document.getElementById('btn-quiz-reset-all').addEventListener('click', () => {
+      userAnswers = {};
+      currentCategoryQuestionIdx = 0;
+      renderCurrentQuestion();
+      playTone(300, 'sawtooth', 0.08);
+      logSerial('[ACADEMY] Sınav cevapları sıfırlandı.');
+    });
+
+    // Global RequestAnimationFrame Loop
+    function globalLoop() {
+      if (activeNavTab === 'sim') {
+        updateAndRenderRobot();
+        renderScope();
+      }
+      requestAnimationFrame(globalLoop);
+    }
+
+    // Window Init
+    window.onload = function() {
+      loadChipStepUI();
+      renderWorkspace();
+      generateCPreview();
+      validateWiring();
+      renderWires();
+      renderCurrentQuestion();
+      globalLoop();
+    };
+  </script>
+</body>
+</html>
